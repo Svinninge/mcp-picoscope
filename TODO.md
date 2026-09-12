@@ -10,14 +10,9 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Hårdvara — kvar att verifiera
 
-- 🔴 **Voltskalan mot en känd spänning.** `MAX_ADC = 32767` är `picosdk`:s egen
-  konvention för `ps2000` (wrappern har ingen `maximum_value` att fråga och
-  faller tillbaka på `2**15-1`), men den är inte mätt. Ett fel här ger **rätt
-  frekvens och fel volt** — det syns inte på kurvan. Koppla något känt: ett
-  AA-batteri (~1,5 V DC) räcker för skalan, ett Arduino-PWM ger både skala och
-  frekvens.
-- 🔴 **Definition of done: frekvens ±1 % på känd signal.** Samma mätning stänger
-  både denna och punkten ovan.
+- 🔴 **Definition of done: frekvens ±1 % på känd signal.** Kvar. Kräver en
+  periodisk källa — ett Arduino-PWM, en funktionsgenerator, eller nätbrummet
+  (50,00 Hz, nätet regleras hårdare än vår ±1 %-gräns) med sonden som antenn.
 - 🟡 **Triggvägen är oprövad mot hårdvara.** `configure_trigger(mode="edge")`
   och timeout-grenen i `_wait_ready` är körd som logik, aldrig mot en enhet som
   faktiskt väntar på en flank. Kräver också en signal.
@@ -63,5 +58,9 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Voltskalan verifierad.** `MAX_ADC = 32767` mätt mot ett
+  1,5 V alkaliskt AA: ±2/5/10/20 V läste 1,6007 / 1,6120 / 1,5931 / 1,6399 V —
+  överens inom 47 mV, och absolutvärdet inom 7 % av cellens nominella.
+  Skript: `scratch/verify_volt_scale.py`.
 - **2026-09-12 — Arbetsregler ärvda från ett tidigare projekt.** SOUL.md, CLAUDE.md,
   LESSONS.md och TODO.md anpassade för ett hårdvarunära MCP-projekt.

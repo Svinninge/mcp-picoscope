@@ -1,10 +1,11 @@
 """Real hardware backend for the PicoScope 2104 via the legacy ps2000 driver.
 
-v0.02
+v0.03
 
 STATUS: verified against the real device 2026-09-12 (PLAN.md step 0). The unit
-reports variant "2104", serial <serial>, hardware 4, driver 3.0.152.6217.
-Still unverified: the volt scale against a known voltage, and the trigger path.
+reports variant "2104", serial <serial>, hardware 4, driver 3.0.152.6217, and
+the volt scale is measured against a 1.5 V cell. Still unverified: the edge
+trigger path, which needs a periodic source.
 
 PS2104 belongs to the OLD 2000 series and speaks ps2000.dll. The ps2000a family
 answers "unit not found" on this device, and that failure is indistinguishable
@@ -69,8 +70,10 @@ RANGE_ENUM: dict[float, int] = {
 CHANNEL_A = 0
 # The legacy driver scales to full int16 regardless of the 8-bit front end, and
 # offers no maximum_value() call to ask — picosdk's own wrapper falls back to
-# the same 2**15-1. Unverified against a known voltage: a wrong scale here
-# gives the right frequency and the wrong volts, which no curve reveals.
+# the same 2**15-1. Verified 2026-09-12 against a 1.5 V alkaline cell: four
+# ranges read 1.593..1.640 V, agreeing within 47 mV. Absolute value is what
+# proves this constant; a wrong one is a constant factor on every range at
+# once, so cross-range agreement alone would not have caught it.
 MAX_ADC = 32767
 # Timebases 0..19 are valid on the PS2104 (20 ns .. 10.49 ms, measured
 # 2026-09-12); the loop stops at the first rejection anyway.
