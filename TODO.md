@@ -21,33 +21,11 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Nästa
 
-- 🟡 **Interaktiv trigg i displayen** *(Per 2026-09-12)*. Klicka och dra
-  triggnivån i kurvfönstret, single-svep, kontinuerlig omtriggning.
-  **Observera att detta bryter en bärande princip:** displayen läser idag och
-  styr aldrig (PLAN.md §3 punkt 5, SOUL.md). Att låta sidan ställa trigg gör den
-  till en kontrollyta, och då behövs svar på tre frågor innan kod skrivs:
-  1. **Vem äger enheten?** Sidan och LLM:en kan ställa trigg samtidigt. Sidans
-     kommandon måste gå genom samma `ScopeSession`-lås som verktygen, och
-     resultatet måste synas i `picoscope://state` så att LLM:en inte resonerar
-     om ett läge som någon annan just ändrat.
-  2. **Vad får sidan göra?** Trigg och svepläge är ofarligt (scopet är en passiv
-     lyssnare), men gränsen måste skrivas ned: aldrig något som matar ut signal,
-     aldrig något som öppnar/stänger enheten under en pågående mätning.
-  3. **Vem driver insamlingen?** Kontinuerlig omtriggning betyder att servern
-     fångar av sig själv i en loop, inte bara när ett verktyg anropas — en ny
-     tråd som måste gå att stoppa och som inte får svälta MCP-anropen på låset.
-  Planfil krävs enligt SOUL.md (arkitekturpåverkan). Skissa: `POST /control` med
-  `{trigger_level_v, mode: single|auto|normal, run: bool}`, en fångstloop i
-  `ScopeSession`, drag-hantering på canvas med nivålinje och triggmarkör.
-
-
-
-
-- 🟢 **`hardware_present()` läser "upptagen" som "saknas".** Hårdvarutestet
-  hoppas över när enheten redan är öppen av en annan session — sant men
-  missvisande; det borde säga vilket.
-- 🟢 **Displayen visar bara senaste fångsten.** Fångstlistan finns i state men
-  ritas inte — en klickbar historik vore billig.
+- 🟡 **Interaktiv trigg i displayen** — spårad i
+  [issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1). Klicka och
+  dra triggnivån, single-svep, kontinuerlig omtriggning. Bryter principen att
+  displayen läser och aldrig styr; frågorna om ägarskap, gränser och
+  insamlingsloop står i issuen. Planfil krävs innan kod.
 
 - 🟡 **`capture_streaming(duration_s, rate)`** — finns i PLAN.md §4 men är inte
   byggd; planens §8 föreslår block i v1 och streaming i v2. Skriv den när
