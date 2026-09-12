@@ -10,9 +10,6 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Hårdvara — kvar att verifiera
 
-- 🔴 **Definition of done: frekvens ±1 % på känd signal.** Kvar. Kräver en
-  periodisk källa — ett Arduino-PWM, en funktionsgenerator, eller nätbrummet
-  (50,00 Hz, nätet regleras hårdare än vår ±1 %-gräns) med sonden som antenn.
 - 🟡 **Triggvägen är oprövad mot hårdvara.** `configure_trigger(mode="edge")`
   och timeout-grenen i `_wait_ready` är körd som logik, aldrig mot en enhet som
   faktiskt väntar på en flank. Kräver också en signal.
@@ -64,6 +61,10 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Definition of done: frekvens ±1 % uppfylld.** Funktionsgenerator,
+  sinus 800 Hz, amplitud 3,0 V: uppmätt 799,37–800,20 Hz över fönster från 2 till
+  200 ms, **0,03 %** fel på de längre och 0,09 % spridning. Vpp 3,02 V mot 3,0 V —
+  inom ett ADC-steg (39 mV på ±5 V). `tools/measure_signal.py` gör om mätningen.
 - **2026-09-12 — Brus rapporteras inte längre som en frekvens.** Uppmätt
   gräns i stället för gissad: riktiga vågformer (sinus, fyrkant, ramp, triangel,
   även sinus under 10 % brus) ligger på 0,06–0,71 % periodjitter; rent brus på

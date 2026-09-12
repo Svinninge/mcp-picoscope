@@ -3,11 +3,13 @@
 Plan för att bygga en MCP-server (Model Context Protocol) som låter Claude styra
 och läsa av ett PicoScope PS2104 USB-oscilloskop.
 
-Status: **v1 körd mot riktig hårdvara** (2026-09-12). Steg 0–6 är genomförda:
-enheten identifierar sig som variant 2104 (serienr <serial>) och hela kedjan
-öppna → konfigurera → fånga → mäta → exportera fungerar genom MCP-servern.
-Kvar för definition of done: en mätning mot en **känd signal**, som samtidigt
-verifierar voltskalan (`MAX_ADC`) och frekvensnoggrannheten. Se
+Status: **v1 klar och verifierad mot hårdvara** (2026-09-12). Steg 0–6 är
+genomförda, och definition of done §7 är uppfylld: enheten identifierar sig som
+variant 2104 (serienr <serial>), voltskalan är mätt mot en 1,5 V-cell, nollan
+mot kortsluten ingång, och frekvensen mot en 800 Hz-sinus med 0,03 % fel. Kvar
+är utvidgningar, inte grunden: flanktriggen mot hårdvara, streaming (v2) och
+den interaktiva triggen i displayen
+([issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1)). Se
 [TODO.md](TODO.md).
 
 ---
@@ -192,7 +194,7 @@ den ursprungliga planen)*
 ## 7. Definition of done (v1)
 
 - [x] `open_device` hittar och öppnar en riktig PS2104. *(2026-09-12, variant 2104 serienr <serial>)*
-- [ ] `capture_block` på en känd signal (t.ex. 1 kHz fyrkant från en funktionsgenerator eller ett Arduino-PWM) ger rätt frekvens ±1 %.
+- [x] `capture_block` på en känd signal ger rätt frekvens ±1 %. *(2026-09-12: funktionsgenerator, sinus 800 Hz, amplitud 3,0 V. Uppmätt 799,37–800,20 Hz över fem fönsterlängder från 2 till 200 ms — **0,03 %** fel på de längre, spridning 0,09 %. Vpp 3,02 V mot 3,0 V, alltså inom ett ADC-steg på ±5 V-området. Verktyg: `tools/measure_signal.py`.)*
 - [x] `export_capture` producerar en PNG som ser rätt ut för ögat. *(mock, 2 kHz fyrkant 30 % duty — verifierad 2026-09-12; kvarstår mot riktig signal)*
 - [x] Hela verktygsuppsättningen fungerar mot mock-backenden utan hårdvara. *(18 enhetstester + stdio-röktest, 2026-09-12)*
 - [x] README räcker för att sätta upp servern på en ny dator. *(2026-09-12)*

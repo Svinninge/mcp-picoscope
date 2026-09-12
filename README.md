@@ -3,10 +3,11 @@
 MCP-server som låter Claude styra och läsa av ett **PicoScope PS2104**
 USB-oscilloskop.
 
-> **Status: v1 körd och kalibrerad mot riktig PS2104** (2026-09-12). Hela kedjan
-> öppna → konfigurera → fånga → mäta → exportera fungerar mot hårdvaran, och
-> både skalan (1,5 V-cell) och nollan (kortsluten ingång) är verifierade. Kvar:
-> frekvens ±1 % mot en känd periodisk signal, och flanktriggen.
+> **Status: v1 klar och verifierad mot riktig PS2104** (2026-09-12). Hela kedjan
+> öppna → konfigurera → fånga → mäta → exportera fungerar mot hårdvaran. Skalan
+> är mätt mot en 1,5 V-cell, nollan mot kortsluten ingång och frekvensen mot en
+> 800 Hz-sinus med 0,03 % fel. Kvar: flanktriggen mot hårdvara, och den
+> interaktiva triggen i displayen (issue #1).
 
 ## Tanken
 
