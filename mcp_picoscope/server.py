@@ -1,4 +1,4 @@
-# File version: v0.02
+# File version: v0.03
 """MCP surface for the PicoScope. Thin: it translates, it does not compute.
 
 Every tool answers with a summary — statistics, a decimated curve, a file path —
@@ -16,8 +16,8 @@ from typing import Any, Callable
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from . import ui, version_line
-from .analysis import downsample_minmax, measure as measure_capture
+from . import control, ui, version_line
+from .analysis import measure as measure_capture
 from .backends.mock import MockBackend, MockSignal
 from .export import export as export_file
 from .scope import ChannelConfig, ScopeError, ScopeSession, TriggerConfig
@@ -43,17 +43,6 @@ server = MCPServer(
     ),
 )
 session = ScopeSession()
-
-# Points in the decimated curve returned with a capture. Two per bucket, so
-# this is ~100 buckets: enough to see the shape, small enough to read.
-CURVE_POINTS = 200
-
-# Autoset headroom: the range must hold the peak with margin, or the next
-# capture clips the moment the signal drifts.
-AUTOSET_HEADROOM = 1.2
-AUTOSET_SURVEY_S = 0.1
-AUTOSET_SURVEY_SAMPLES = 4096
-AUTOSET_PERIODS = 5
 
 
 def tool(fn: Callable) -> Callable:
@@ -302,24 +291,7 @@ def capture_block(duration_s: float = 0.01, samples: int = 4096) -> dict:
     driver snaps to its own timebase grid, and the reply reports what it got.
     The full record stays on the server; use export_capture to get the samples.
     """
-    backend = session.require_open()
-    capture = backend.capture_block(duration_s, samples)
-    capture.capture_id = session.next_capture_id()
-    session.store(capture)
-    log.info(
-        "%s: %d samples at %.6g S/s", capture.capture_id, capture.volts.size,
-        capture.sample_rate_hz,
-    )
-    stats = measure_capture(capture)
-    return {
-        "capture_id": capture.capture_id,
-        "measurements": stats,
-        "curve": downsample_minmax(capture.volts, capture.dt_s, CURVE_POINTS),
-        "curve_note": (
-            f"{len(capture.volts)} samples decimated to ~{CURVE_POINTS} "
-            "[time_s, volt] pairs, min/max per bucket so spikes survive."
-        ),
-    }
+    return control.capture_block(session, duration_s, samples)
 
 
 @tool
@@ -346,46 +318,10 @@ def autoset() -> dict:
     """Find a range and timebase that show the signal — the AutoSetup button.
 
     Surveys on the widest range, measures the frequency, then re-captures about
-    five periods on the smallest range that holds the peaks with headroom.
+    five periods on the smallest range that holds the peaks with headroom. The
+    display's Autoset button runs this same code, under the same lock.
     """
-    backend = session.require_open()
-    ranges = sorted(session.device.voltage_ranges_v)  # type: ignore[union-attr]
-    steps: list[str] = []
-
-    backend.set_channel(ChannelConfig(ranges[-1], session.channel.coupling, True))
-    backend.set_trigger(TriggerConfig(mode="auto"))
-    survey = backend.capture_block(AUTOSET_SURVEY_S, AUTOSET_SURVEY_SAMPLES)
-    stats = measure_capture(survey)
-    steps.append(f"surveyed on ±{ranges[-1]} V: Vpp {stats['vpp_v']:.4g} V")
-
-    duration = AUTOSET_SURVEY_S
-    if stats["frequency_hz"]:
-        duration = AUTOSET_PERIODS / stats["frequency_hz"]
-        steps.append(
-            f"measured {stats['frequency_hz']:.6g} Hz → {AUTOSET_PERIODS} periods "
-            f"= {duration:.6g} s"
-        )
-    else:
-        steps.append("no periodic signal found; keeping the survey timebase")
-
-    peak = max(abs(stats["vmin_v"]), abs(stats["vmax_v"])) * AUTOSET_HEADROOM
-    chosen = next((r for r in ranges if r >= peak), ranges[-1])
-    applied = backend.set_channel(
-        ChannelConfig(chosen, session.channel.coupling, True)
-    )
-    session.channel = applied
-    steps.append(f"picked ±{applied.range_v} V ({AUTOSET_HEADROOM:g}× headroom)")
-
-    capture = backend.capture_block(duration, AUTOSET_SURVEY_SAMPLES)
-    capture.capture_id = session.next_capture_id()
-    session.store(capture)
-    return {
-        "capture_id": capture.capture_id,
-        "steps": steps,
-        "range_v": applied.range_v,
-        "measurements": measure_capture(capture),
-        "curve": downsample_minmax(capture.volts, capture.dt_s, CURVE_POINTS),
-    }
+    return control.autoset(session)
 
 
 # -- resource -------------------------------------------------------------

@@ -1,4 +1,4 @@
-# File version: v0.03
+# File version: v0.04
 """Local scope display, opened in an Edge app window when the server is used.
 
 The MCP session sees numbers; a person wants to see the waveform. This serves
@@ -46,6 +46,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import version_line
 from .analysis import downsample_minmax, measure
+from .scope import ScopeError
 
 log = logging.getLogger(__name__)
 
@@ -481,6 +482,35 @@ def _ui_state() -> dict:
     return state
 
 
+# What the page is allowed to do, as opposed to watch. Autoset only changes the
+# range and timebase — a scope is a passive listener and the PS2104 has no
+# signal generator — and it runs the same code the MCP tool runs, under the
+# same lock. Anything added here needs the same three answers: one
+# implementation, one lock, and a result the session can report afterwards.
+CONTROLS = ("autoset",)
+
+
+def run_control(action: str) -> dict:
+    """Perform a control action on behalf of the page."""
+    from . import control  # imported late: control imports analysis, we import it too
+
+    if action not in CONTROLS:
+        raise ScopeError(
+            f"Unknown action {action!r}. This display can run: {', '.join(CONTROLS)}."
+        )
+    if _session is None:
+        raise ScopeError("No session is attached to this display.")
+    result = control.autoset(_session)
+    record(action, "ok")
+    return {
+        "ok": True,
+        "action": action,
+        "steps": result["steps"],
+        "range_v": result["range_v"],
+        "capture_id": result["capture_id"],
+    }
+
+
 def _number(values: dict, key: str) -> float | None:
     try:
         return float(values[key][0])
@@ -502,6 +532,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(
                 json.dumps(_ui_state()).encode("utf-8"), "application/json", cache=False
             )
+        elif parsed.path == "/control":
+            self._control(parse_qs(parsed.query))
         elif parsed.path == "/view":
             q = parse_qs(parsed.query)
             view = save_view(
@@ -516,6 +548,28 @@ class _Handler(BaseHTTPRequestHandler):
             )
         else:
             self.send_error(404)
+
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's name
+        parsed = urlparse(self.path)
+        if parsed.path == "/control":
+            self._control(parse_qs(parsed.query))
+        else:
+            self.send_error(404)
+
+    def _control(self, query: dict) -> None:
+        """Run an action for the page, answering with why not rather than 500."""
+        action = (query.get("action") or [""])[0]
+        try:
+            body = run_control(action)
+        except ScopeError as exc:
+            log.warning("control %s: %s", action, exc)
+            record(action or "control", "fel", str(exc))
+            body = {"ok": False, "action": action, "error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - the page must still get an answer
+            log.exception("control %s failed", action)
+            record(action or "control", "fel", str(exc))
+            body = {"ok": False, "action": action, "error": f"{type(exc).__name__}: {exc}"}
+        self._send(json.dumps(body).encode("utf-8"), "application/json", cache=False)
 
     def _send(self, body: bytes, content_type: str, cache: bool = True) -> None:
         self.send_response(200)

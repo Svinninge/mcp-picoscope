@@ -103,9 +103,11 @@ visar kurvan som ett oscilloskop gör — rutnät, V/div, ms/div — plus mätv�
 kanal- och trigginställningar, och en logg över vilka MCP-verktyg som anropats.
 Den uppdateras var 400:e ms.
 
-Sidan **läser** bara: den kan inte styra scopet, och en simulerad signal märks
-med en orange **SIMULERAD**-flagga så att en mock aldrig kan misstas för en
-mätning.
+Sidan har en **Autoset**-knapp som kör exakt samma kod som MCP-verktyget, under
+samma lås — resultatet syns i aktivitetsloggen, så du och Claude ser vad den
+andra gjort. I övrigt läser sidan bara; den kan inte ställa kanal eller trigg,
+och aldrig något som matar ut signal. En simulerad signal märks med en orange
+**SIMULERAD**-flagga så att en mock inte kan misstas för en mätning.
 
 **Ett fönster — på hela maskinen.** Det finns ett enda PS2104 på bänken, så ett
 andra fönster påstår att det finns två instrument. Att sidan pollar är beviset

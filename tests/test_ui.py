@@ -198,3 +198,42 @@ def test_size_offset_is_learned_so_the_window_stops_growing(monkeypatch):
     ui._open_edge("http://127.0.0.1:8071/")
     # Asks for 1000 again, so the window comes back the size the user had.
     assert "--window-size=1000,680" in seen["args"]
+
+
+# -- the page as a control surface, not just a display --------------------
+
+
+def test_only_whitelisted_actions_run(monkeypatch):
+    monkeypatch.setattr(ui, "_session", object())
+    with pytest.raises(Exception) as exc:
+        ui.run_control("close_device")
+    assert "Unknown action" in str(exc.value)
+
+
+def test_autoset_from_the_page_runs_the_same_code_as_the_tool(monkeypatch):
+    """One implementation, or the two surfaces drift apart."""
+    from mcp_picoscope import control
+
+    calls: list = []
+    monkeypatch.setattr(ui, "_session", "the-session")
+    monkeypatch.setattr(
+        control,
+        "autoset",
+        lambda s: calls.append(s)
+        or {"steps": ["picked ±5 V"], "range_v": 5.0, "capture_id": "cap0007"},
+    )
+    body = ui.run_control("autoset")
+    assert calls == ["the-session"]
+    assert body["ok"] and body["capture_id"] == "cap0007"
+
+
+def test_a_control_action_shows_up_in_the_activity_log(monkeypatch):
+    """The LLM and the user must see what the other one did."""
+    from mcp_picoscope import control
+
+    monkeypatch.setattr(ui, "_session", "s")
+    monkeypatch.setattr(
+        control, "autoset", lambda s: {"steps": [], "range_v": 1.0, "capture_id": "c"}
+    )
+    ui.run_control("autoset")
+    assert ui._activity[0]["tool"] == "autoset"

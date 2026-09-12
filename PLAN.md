@@ -76,6 +76,9 @@ Claude (MCP-klient)
   mcp_picoscope/export.py        ← CSV / NPZ / PNG
         │
         ▼
+  mcp_picoscope/control.py       ← åtgärder: autoset, blockfångst (delas av båda ytorna)
+        │
+        ▼
   mcp_picoscope/ui.py            ← lokal display (HTTP 8071) + Edge-fönster
   mcp_picoscope/ui.html          ← sidan: kurva, mätvärden, MCP-aktivitet
 ```
@@ -93,10 +96,18 @@ Claude (MCP-klient)
    (statistik, nedsamplad kurva, filsökväg), aldrig hela arrayen.
 4. **Explicit state.** Kanal- och triggerinställningar sätts med egna verktyg och
    går att läsa tillbaka, så att LLM:en kan resonera om aktuellt läge.
-5. **Displayen läser, styr aldrig** *(tillagt 2026-09-12)*. Sidan speglar samma
-   `ScopeSession` som verktygen skriver. Ett UI som också kunde trycka på knappar
-   hade behövt sessionslåset och ett svar på vem som får ändra vad mitt i en
-   mätning — det är en annan produkt.
+5. **Displayen läser, och får göra ett fåtal uppräknade saker** *(reviderat
+   2026-09-12, efter Pers begäran om en autoset-knapp)*. Ursprungsprincipen var
+   att sidan aldrig styr. Den höll tills första knappen behövdes, och i stället
+   för att tumma på den tyst gäller nu tre krav för varje åtgärd sidan får göra:
+   **en implementation** (`control.py`, samma kod som MCP-verktyget — två kopior
+   skulle glida isär och de två ytorna vore oense om vad scopet gör), **ett lås**
+   (`ScopeSession.lock`, så att ett klick och ett verktygsanrop inte kan väva in
+   i varandra mitt i en sekvens av fångster), och **ett synligt resultat**
+   (ändringen landar i sessionen, så `picoscope://state` talar sanning efteråt
+   och LLM:en inte resonerar om ett område någon annan just ändrat).
+   Vitlistan står i `ui.CONTROLS`. Inget som matar ut signal får någonsin in
+   där; scopet är en passiv lyssnare och PS2104 saknar siggen.
 
 ---
 

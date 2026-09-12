@@ -61,6 +61,10 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Autoset-knapp i displayen.** Första åtgärden sidan får göra,
+  och den satte mönstret för issue #1: `control.py` bär implementationen som
+  både MCP-verktyget och sidan anropar, låset tas där, och resultatet landar i
+  sessionen. Vitlistan är `ui.CONTROLS`. `server.py` blev tunnare på köpet.
 - **2026-09-12 — Definition of done: frekvens ±1 % uppfylld.** Funktionsgenerator,
   sinus 800 Hz, amplitud 3,0 V: uppmätt 799,37–800,20 Hz över fönster från 2 till
   200 ms, **0,03 %** fel på de längre och 0,09 % spridning. Vpp 3,02 V mot 3,0 V —

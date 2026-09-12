@@ -29,6 +29,7 @@ nedsamplad kurva och filsökväg, annars spränger en fångst kontextfönstret.
 mcp_picoscope/server.py          MCP-ytan. Tunn: översätter, räknar inte.
 mcp_picoscope/scope.py           Värdetyper, backend-protokoll, ScopeSession (låset)
 mcp_picoscope/analysis.py        Vpp/RMS/frekvens/duty + min/max-decimering
+mcp_picoscope/control.py         Åtgärder (autoset, fångst) — delade av MCP och sidan
 mcp_picoscope/export.py          CSV / NPZ / PNG under captures/
 mcp_picoscope/ui.py              Lokal webbserver + Edge-start (port 8071)
 mcp_picoscope/ui.html            Sidan: kurva, mätvärden, MCP-aktivitet
@@ -108,9 +109,12 @@ redan äger 8071. Ramoffseten (skillnaden mellan var vi bad Edge placera
 fönstret och var innehållet hamnade) mäts upp vid första rapporten efter en
 start; utan den vandrar fönstret en titelrad nedåt varje gång.
 `PICOSCOPE_UI=0` stänger av alltihop; testerna sätter det, och allt som körs
-obevakat bör göra detsamma. Sidan **läser** sessionen och kan aldrig styra
-hårdvaran — ett UI som också kunde trycka på knappar hade behövt sessionslåset
-och en behörighetsfråga.
+obevakat bör göra detsamma. Sidan läser sessionen och får dessutom köra de
+åtgärder som står i `ui.CONTROLS` — idag bara `autoset`. Varje sådan åtgärd
+måste uppfylla tre krav: **en implementation** i `control.py` som MCP-verktyget
+också använder, **sessionslåset** taget där, och **ett resultat som landar i
+sessionen** så att `picoscope://state` talar sanning efteråt. Lägg aldrig något
+i vitlistan som matar ut signal.
 
 **Två servrar kan kapa samma port på Windows.** `HTTPServer` sätter
 `allow_reuse_address`, och `SO_REUSEADDR` betyder inte samma sak på Windows som

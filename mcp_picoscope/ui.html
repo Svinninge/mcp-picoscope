@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.08 -->
+<!-- File version: v0.10 -->
 <html lang="sv">
 <head>
 <meta charset="utf-8">
@@ -51,6 +51,13 @@
   }
   .zoom button:hover { border-color: var(--dim); }
   .zoom button.wide { width: auto; padding: 0 7px; font-size: 11px; }
+  .action {
+    background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 4px; padding: 2px 12px; cursor: pointer; font-size: 12px;
+    flex: 0 0 auto;
+  }
+  .action:hover:not(:disabled) { border-color: var(--ok); color: var(--ok); }
+  .action:disabled { opacity: .45; cursor: default; }
 
   main {
     background: var(--bg); padding: var(--pad); display: flex;
@@ -109,6 +116,7 @@
   }
   @media (max-width: 560px) { #activity-section { display: none; } }
   @media (max-width: 440px) { .readout.p3 { display: none; } }
+  @media (max-width: 400px) { .action { display: none; } }
   @media (max-width: 340px) { .readout.p2, aside { display: none; } }
   @media (max-height: 460px) { .divs { display: none; } .readout .v { font-size: 14px; } }
   @media (max-height: 340px) { .readouts { display: none; } }
@@ -122,6 +130,7 @@
   <div class="spacer"></div>
   <span class="pill" id="version">—</span>
   <span class="pill" id="clock">—</span>
+  <button id="autoset" class="action" title="Välj område och tidbas som visar signalen">Autoset</button>
   <div class="zoom">
     <button id="zoom-out" title="Mindre (Ctrl+-)">−</button>
     <button id="zoom-reset" class="wide" title="Återställ zoom">100%</button>
@@ -222,6 +231,38 @@ function applyServerView(view) {
 }
 
 window.addEventListener("resize", () => { sizeToViewport(); fit(); });
+
+// -- actions ---------------------------------------------------------------
+// The page asks the server to do it; the server owns the device and the lock.
+// The button is disabled while it runs, because autoset takes several captures
+// and a second click would queue up behind the lock for no reason.
+const autosetButton = document.getElementById("autoset");
+
+// A message from a button has to outlive the next poll, which is 400 ms away
+// and would otherwise wipe it with the capture's own note before it is read.
+const FLASH_MS = 8000;
+let flashUntil = 0;
+
+function flash(text) {
+  flashUntil = Date.now() + FLASH_MS;
+  document.getElementById("capnote").textContent = text;
+}
+
+autosetButton.onclick = async () => {
+  autosetButton.disabled = true;
+  autosetButton.textContent = "Autoset…";
+  try {
+    const r = await fetch("/control?action=autoset", { method: "POST" });
+    const body = await r.json();
+    flash(body.ok ? body.steps.join(" · ") : "Autoset misslyckades: " + body.error);
+    poll();
+  } catch (e) {
+    flash("Autoset nådde inte servern.");
+  } finally {
+    autosetButton.textContent = "Autoset";
+    autosetButton.disabled = false;
+  }
+};
 
 document.getElementById("zoom-out").onclick = () => { applyScale(scale - SCALE_STEP); reportView(true); };
 document.getElementById("zoom-in").onclick = () => { applyScale(scale + SCALE_STEP); reportView(true); };
@@ -384,6 +425,7 @@ async function poll() {
   }
   document.getElementById("device").textContent = s.device
     ? `${s.device.model} · ${s.device.serial}` : "—";
+  if (!autosetButton.textContent.endsWith("…")) autosetButton.disabled = !s.open;
   document.getElementById("clock").textContent = new Date().toLocaleTimeString();
   document.getElementById("version").textContent = s.version || "—";
   applyServerView(s.view);
@@ -417,7 +459,9 @@ async function poll() {
       `${(m.range_v / (GRID_Y / 2)).toPrecision(3)} V/div · ` +
       `${(perDiv * 1e3).toPrecision(3)} ms/div · ${m.samples} sampel · ` +
       `${s.latest.capture_id}`;
-    document.getElementById("capnote").textContent = m.note || "";
+    if (Date.now() > flashUntil) {
+      document.getElementById("capnote").textContent = m.note || "";
+    }
     draw();
   }
 }
