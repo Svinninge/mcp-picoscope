@@ -10,6 +10,25 @@ Newest first.
 
 ## 2026-09-12
 
+**The display and the tools translated to English**, ahead of making the
+repository public. Three faults surfaced while checking the result.
+
+**Autoset looked broken because the sweep undid it.** A running sweep keeps
+its own window; autoset picked a good one and the next sweep replaced it a
+tenth of a second later. Autoset now hands its window over, and the retune
+compares frequencies rather than window lengths — comparing lengths cannot
+tell a changed signal from a deliberate choice.
+
+**A sweep window could trap itself.** Too short to hold two edges means no
+frequency, and no frequency means nothing widens it again. Found stuck at the
+20 µs minimum with an 800 Hz signal present — 0.066 of a period per capture.
+The window now widens after a few empty sweeps.
+
+**Autoset now sets the trigger level to half of peak-to-peak**, the midpoint
+of the signal, and restores the trigger mode it found. Zero is the wrong
+default for anything with an offset: the bench signal sits at 0..3 V and a
+trigger at zero would never fire.
+
 **Trigger and sweep in the display** (issue #1, partly). A sweep engine in
 `control.py` with its own thread: `auto`, `normal`, `single`, stoppable, the lock
 taken per capture. The trigger level is dragged with the mouse on the canvas and

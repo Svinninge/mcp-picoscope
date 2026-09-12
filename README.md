@@ -90,7 +90,7 @@ opened by one process at a time.
 | `capture_block(duration_s, samples)` | Capture one block → statistics + decimated curve + capture id. |
 | `measure(capture_id)` | Vpp, Vmin/Vmax, mean, RMS, frequency, period, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → path. |
-| `autoset()` | Picks a range and timebase that show the signal. Hunts across timebases fast → slow, so anything from 50 Hz to 1 MHz is found. |
+| `autoset()` | Picks a range and timebase that show the signal, and puts the trigger level at half of peak-to-peak. Hunts across timebases fast → slow, so anything from 50 Hz to 1 MHz is found. |
 | `start_sweep(mode, window_s)` | Capture continuously. `auto` sweeps regardless of the trigger, `normal` only on a real trigger, `single` once. |
 | `stop_sweep()` | Stop the sweep. |
 | `open_ui(force)` | Show the display; reuses the window already watching. `force=true` opens another. |
@@ -173,6 +173,8 @@ block — three pixels per period, which neither this display nor a bench scope
 can resolve. The sweep therefore sets the window from the measured frequency, at
 about ten periods, and retunes only when it is off by more than 1.5× so the
 timebase does not twitch on the last digit.
+
+**Autoset owns what it sets.** It hands its window to a running sweep and puts the trigger level at half of peak-to-peak — the midpoint of the signal, where the slope is steepest and a trigger is steadiest. Zero would be the wrong default for anything with an offset: a 0..3 V signal never crosses it. The trigger mode you had is restored afterwards; only the level moves.
 
 **Autoset hunts fast → slow.** Too fast a window shows too few edges and is
 rejected for saying nothing; too slow a window **aliases** and is rejected for

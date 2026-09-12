@@ -131,7 +131,7 @@ Claude (MCP client)
 | `measure(capture_id)` | Vpp, Vmin, Vmax, mean, RMS, frequency, period, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png`. Returns the path. |
 | `start_sweep(mode, window_s)` / `stop_sweep()` | Continuous acquisition in its own thread: `auto`, `normal`, `single`. The lock is taken per capture, never across the loop. |
-| `autoset()` | Tries voltage ranges and timebases until the signal fills the screen sensibly — what the "AutoSetup" button does. The ladder runs **fast → slow** and a frequency is believed only at ≥10 samples per period; the opposite direction produced an alias (11.8 kHz reported as 406 Hz). Also a button in the display. |
+| `autoset()` | Tries voltage ranges and timebases until the signal fills the screen sensibly — what the "AutoSetup" button does. The ladder runs **fast → slow** and a frequency is believed only at ≥10 samples per period; the opposite direction produced an alias (11.8 kHz reported as 406 Hz). It also hands its window to a running sweep and sets the trigger level to half of peak-to-peak. Also a button in the display. |
 
 **Resource:** `picoscope://state` — current configuration and the latest capture
 as a readable resource.

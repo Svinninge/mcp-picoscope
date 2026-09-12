@@ -402,3 +402,31 @@ def test_the_sweep_leaves_a_chosen_window_alone_while_the_signal_holds():
         assert chosen > 0
     finally:
         control.stop_sweep(session)
+
+
+def test_autoset_puts_the_trigger_level_at_half_of_peak_to_peak():
+    """Zero is the wrong default: a 0..3 V signal never crosses it."""
+    from mcp_picoscope import control
+    from mcp_picoscope.backends.mock import MockSignal
+
+    session = sweep_session(MockSignal("sine", 1000.0, 1.5, offset_v=1.5, noise_v=0.0))
+    result = control.autoset(session)
+    stats = result["measurements"]
+    midpoint = (stats["vmin_v"] + stats["vmax_v"]) / 2
+    assert session.trigger.threshold_v == pytest.approx(midpoint, abs=0.05)
+    assert session.trigger.threshold_v > 1.0, "still sitting at zero"
+    assert "half of peak-to-peak" in " ".join(result["steps"])
+
+
+def test_autoset_gives_back_the_trigger_mode_it_found():
+    """An armed edge trigger must survive an autoset; only the level moves."""
+    from mcp_picoscope import control
+    from mcp_picoscope.backends.mock import MockSignal
+
+    session = sweep_session(MockSignal("sine", 1000.0, 1.5, offset_v=1.5, noise_v=0.0))
+    control.set_trigger(session, "edge", 0.0, "falling", auto_trigger_ms=250)
+    control.autoset(session)
+    assert session.trigger.mode == "edge"
+    assert session.trigger.direction == "falling"
+    assert session.trigger.auto_trigger_ms == 250
+    assert session.trigger.threshold_v > 1.0, "the level did not move to the signal"

@@ -173,6 +173,10 @@ trigger when the scope is free-running, or the button would do nothing in exactl
 the state the device opens in. Neither touches the level or the direction; those
 are the user's.
 
+**Who owns the timebase.** A running sweep keeps its own window, so anything that picks a timebase has to hand it over or be undone 150 ms later — that is how autoset came to look broken. `SweepRunner.set_window(seconds, for_hz)` is the handover, and the retune compares **frequencies, not window lengths**: comparing lengths cannot tell "the signal changed" from "somebody deliberately chose a different number of periods", so a deliberate choice was overwritten on the next sweep.
+
+**A sweep window can trap itself.** Too short a window holds fewer than two edges, so no frequency is measured, so the retune that would widen it never fires. Seen live: stuck at the 20 µs minimum with an 800 Hz signal on the probe — 0.066 of a period per capture. After `SWEEP_MISSES_BEFORE_WIDENING` empty sweeps the window widens by `SWEEP_WIDEN_FACTOR`; widening is safe, since a window that is too long only draws more periods while one that is too short shows nothing at all.
+
 **Autoset hunts fast → slow, never the other way.** Too fast a timebase shows too
 few edges and is rejected for saying nothing; too slow a one **aliases** and is
 rejected for lying. The wrong direction reported an 11.8 kHz sine as a perfectly
