@@ -21,6 +21,14 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Nästa
 
+- 🟡 **Kurvan i MCP-svaret är onödigt dyr.** Mätt 2026-09-12 genom den
+  registrerade servern: ett `autoset`-svar bar 200 punkter som nästlade listor
+  med full flyttalsprecision (`0.002761925107577746`) — flera tusen tokens för
+  en kurva som ska läsas av en LLM. Vi kapar antalet punkter men inte antalet
+  siffror. Runda till ~5 signifikanta siffror och överväg färre punkter i
+  verktygssvaret (displayen har ändå sina 1600). Det här går rakt emot
+  projektets egen princip om att aldrig spränga kontextfönstret.
+
 - 🔴 **Brus rapporteras som en frekvens.** Sett live 2026-09-12: med okopplad
   sond valde `autoset` ±0,5 V, och 30 mV brus blev "456 Hz" — över
   `MIN_SWING_FRAC` (2 % av området), alltså släpptes det igenom som en signal.
