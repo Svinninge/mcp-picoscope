@@ -61,6 +61,16 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Autoset ser hela frekvensområdet, och displayen följer
+  signalen.** Per: "kan inte visa 11.8 kHz upplöst". Mätningen var rätt (11,800
+  kHz), men autosets survey låg på 41 kS/s — 3,5 sampel per period — och svarade
+  "ingen periodisk signal". Första rättningen gjorde det värre: en stege från
+  långsam till snabb tidbas gav ett **alias** på 406 Hz som såg stabilt ut.
+  Stegen går nu snabb → långsam och tror bara på en frekvens när samplingstakten
+  är ≥10× den. Mock 50 Hz–1 MHz: alla inom 0,03 %. Hårdvara: 11 807 Hz, 530
+  sampel/period. `tools/ui_session.py` sätter dessutom fönstret efter uppmätt
+  frekvens (~10 perioder) i stället för fasta 20 ms, som ritade 248 perioder som
+  ett grönt block.
 - **2026-09-12 — Autoset-knapp i displayen.** Första åtgärden sidan får göra,
   och den satte mönstret för issue #1: `control.py` bär implementationen som
   både MCP-verktyget och sidan anropar, låset tas där, och resultatet landar i

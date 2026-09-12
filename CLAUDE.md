@@ -147,6 +147,12 @@ Genomgångarna klarar båda och ger duty cycle på köpet. Nivån är **mittpunk
 mellan min och max**, inte medelvärdet: en 20 %-fyrkant har ett medelvärde långt
 från sin egen mittpunkt, och mätt mot det blir varje sådan våg ~50 %.
 
+**Autoset letar snabb → långsam, aldrig tvärtom.** En för snabb tidbas visar för
+få flanker och avvisas för att den inget säger; en för långsam **aliasar** och
+avvisas för att den ljuger. Fel riktning fick en 11,8 kHz-sinus att rapporteras
+som 406 Hz, helt stabilt. En frekvens tros bara när samplingstakten är minst
+`AUTOSET_MIN_SAMPLES_PER_PERIOD` (10) gånger den.
+
 **Brus är inte en frekvens.** Amplitudtröskeln (`MIN_SWING_FRAC`, 2 % av
 området) räcker inte — på ett smalt område klarar brus den lätt, och en okopplad
 sond rapporterades en gång som "456 Hz". Periodiciteten avgör:
