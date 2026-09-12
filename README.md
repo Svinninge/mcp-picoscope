@@ -88,7 +88,7 @@ process i taget.
 | `capture_block(duration_s, samples)` | Fånga ett block → statistik + nedsamplad kurva + capture-id. |
 | `measure(capture_id)` | Vpp, Vmin/Vmax, medel, RMS, frekvens, periodtid, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → sökväg. |
-| `autoset()` | Väljer område och tidbas som visar signalen — AutoSetup-knappen. |
+| `autoset()` | Väljer område och tidbas som visar signalen. Letar över tidbaser snabb → långsam, så allt från 50 Hz till 1 MHz hittas. |
 | `open_ui(force)` | Visar displayen; återanvänder fönstret som redan tittar. `force=true` ger ett extra. |
 
 **Resurs:** `picoscope://state` — backend, enhet, kanal, trigg och hållna fångster.
@@ -141,6 +141,20 @@ Kurvan och dess V/div är sist kvar — en kurva utan skala är ingen mätning.
 | `PICOSCOPE_UI_PORT` | Annan startport än 8071 (tio portar provas uppåt). |
 | `PICOSCOPE_UI_BROWSER=0` | Servera sidan men öppna aldrig ett fönster — för egen flik, eller för tester. |
 
+### Tidbasen följer signalen
+
+Ett fast fönster fungerar inte: 20 ms av en 800 Hz-sinus är 16 perioder och
+läses fint, medan samma 20 ms av 11,8 kHz är 248 perioder och ritas som ett
+grönt block — tre pixlar per period, vilket varken den här displayen eller ett
+bänkscope kan visa upplöst. `tools/ui_session.py` sätter därför fönstret efter
+uppmätt frekvens, ungefär tio perioder, och ändrar det bara när det är fel med
+mer än 1,5× så att tidbasen inte hoppar på sista siffran.
+
+**Autoset letar snabb → långsam.** En för snabb tidbas visar för få flanker och
+förkastas för att den inget säger; en för långsam **aliasar** och förkastas för
+att den ljuger — fel riktning fick en 11,8 kHz-sinus att rapporteras som stabila
+406 Hz. En frekvens tros bara när samplingstakten är minst tio gånger den.
+
 Displayen lever exakt så länge MCP-servern gör. För att titta på scopet utan en
 Claude-session igång, håll en egen session öppen:
 
@@ -153,8 +167,8 @@ Claude-session igång, håll en egen session öppen:
 > **Du:** Öppna picoscopet och kör en autoset.
 >
 > **Claude:** *(open_device → autoset)* Enheten öppnad. Autoset surveyade på
-> ±20 V, mätte 2,0001 kHz, valde ±2 V och fångade fem perioder: Vpp 3,0 V,
-> duty 30 %, RMS 1,5 V.
+> ±20 V över 0,02 och 0,2 ms, mätte 11,807 kHz, valde ±5 V och fångade fem
+> perioder: Vpp 3,02 V, duty 49,8 %, RMS 1,78 V.
 >
 > **Du:** Spara den som PNG.
 >

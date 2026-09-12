@@ -125,7 +125,7 @@ Claude (MCP-klient)
 | `capture_streaming(duration_s, rate)` | Långsam kontinuerlig insamling till fil. |
 | `measure(capture_id)` | Vpp, Vmin, Vmax, medel, RMS, frekvens, periodtid, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png`. Returnerar sökväg. |
-| `autoset()` | Provar spänningsområden och tidbaser tills signalen fyller skärmen rimligt — det som "AutoSetup"-knappen gör. |
+| `autoset()` | Provar spänningsområden och tidbaser tills signalen fyller skärmen rimligt — det som "AutoSetup"-knappen gör. Stegen går **snabb → långsam** och en frekvens tros bara vid ≥10 sampel/period; motsatt riktning gav ett alias (11,8 kHz rapporterat som 406 Hz). Finns även som knapp i displayen. |
 
 **Resurs:** `picoscope://state` — aktuell konfiguration och senaste fångst som
 läsbar resurs.
@@ -159,6 +159,14 @@ läsbar resurs.
 - Tidbasval: välj snabbaste tidbas som täcker begärd `duration_s` med begärt
   antal sampel; rapportera faktisk samplingshastighet tillbaka (den blir sällan
   exakt den man bad om).
+
+**Steg 3b — Tidbasval som håller** ✅ 2026-09-12 *(tillkom under användning)*
+- `_select_timebase` väljer snabbaste tidbas som täcker begärd tid; enheten
+  rapporterar faktisk samplingstakt tillbaka.
+- `autoset` letar över en stege av fönsterlängder, snabb → långsam, och kräver
+  ≥10 sampel per period innan den tror på en frekvens. Verifierat 50 Hz–1 MHz i
+  mocken (0,03 %) och 11,8 kHz på hårdvara (530 sampel/period).
+- Displayens fångstloop sätter fönstret efter uppmätt frekvens, ~10 perioder.
 
 **Steg 4 — Export och presentation** ✅ 2026-09-12
 - CSV (tid, spänning), NPZ för vidare analys, PNG via matplotlib.
