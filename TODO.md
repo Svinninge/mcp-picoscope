@@ -21,13 +21,6 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Nästa
 
-- 🟡 **Kurvan i MCP-svaret är onödigt dyr.** Mätt 2026-09-12 genom den
-  registrerade servern: ett `autoset`-svar bar 200 punkter som nästlade listor
-  med full flyttalsprecision (`0.002761925107577746`) — flera tusen tokens för
-  en kurva som ska läsas av en LLM. Vi kapar antalet punkter men inte antalet
-  siffror. Runda till ~5 signifikanta siffror och överväg färre punkter i
-  verktygssvaret (displayen har ändå sina 1600). Det här går rakt emot
-  projektets egen princip om att aldrig spränga kontextfönstret.
 
 - 🔴 **Brus rapporteras som en frekvens.** Sett live 2026-09-12: med okopplad
   sond valde `autoset` ±0,5 V, och 30 mV brus blev "456 Hz" — över
@@ -80,6 +73,11 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Siffrorna avrundade i allt som lämnar `analysis.py`.**
+  Statistik 6 signifikanta siffror, kurvpunkter 5. Ett svar med hårdvaruformade
+  tal (`adc/32767`) gick från 7 593 till 4 716 tecken — **38 % mindre**, kurvan
+  ensam 40 %. En 8-bitars ADC löser en del på 256; elva siffror var precision
+  instrumentet inte har, betald i anroparens kontextfönster.
 - **2026-09-12 — Displayen skalbar, och ett fönster i stället för flera.**
   Zoomknappar (40–200 %, sparas i webbläsaren) plus brytpunkter som fäller ihop
   layouten ned till ~320×260. Fönsterstarten styrs nu av om sidan pollat de

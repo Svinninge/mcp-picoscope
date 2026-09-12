@@ -1,4 +1,4 @@
-# File version: v0.01
+# File version: v0.02
 """Waveform measurements: amplitude statistics, frequency, duty cycle.
 
 Frequency comes from hysteresis mid-level crossings, not an FFT peak. A square
@@ -8,6 +8,8 @@ cycle for free. The hysteresis band is what keeps noise from counting as edges.
 """
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 
@@ -22,6 +24,29 @@ MIN_SWING_FRAC = 0.02
 
 # Samples this close to the full-scale rail are treated as clipped.
 OVERRANGE_FRAC = 0.995
+
+# Significant digits in anything that leaves this module. An 8-bit ADC resolves
+# one part in 256, and a frequency from a few hundred edges is good to maybe
+# five figures — so 0.008636738181707206 V claims eleven digits of precision
+# the instrument does not have, and costs a caller's context window for the
+# privilege. Curves get one digit less than statistics: they are drawn, not read.
+STAT_DIGITS = 6
+CURVE_DIGITS = 5
+
+
+def round_sig(value: float | None, digits: int = STAT_DIGITS) -> float | None:
+    """Round to significant digits, spanning µV to 20 V and ns to seconds.
+
+    Decimal places cannot do this job: the same measurement set holds 2.5e-5 V
+    and 1.9e+4 Hz, and any fixed number of decimals mangles one end or the other.
+    """
+    if value is None:
+        return None
+    if not math.isfinite(value):
+        return float(value)
+    if value == 0:
+        return 0.0  # float(), not the numpy scalar that walked in
+    return float(f"{value:.{digits}g}")
 
 
 def crossings(volts: np.ndarray, dt_s: float) -> tuple[np.ndarray, np.ndarray, float]:
@@ -124,7 +149,7 @@ def measure(capture: Capture) -> dict:
             f"{MIN_SWING_FRAC:.0%} of the {capture.range_v} V range. "
             "Looks like DC or noise; try a smaller range_v."
         )
-        return result
+        return _rounded(result)
 
     rising, falling, _level = crossings(v, capture.dt_s)
     if rising.size < 2:
@@ -132,7 +157,7 @@ def measure(capture: Capture) -> dict:
             "Fewer than two rising edges in the record — capture a longer "
             "duration_s to measure frequency."
         )
-        return result
+        return _rounded(result)
 
     periods = np.diff(rising)
     period = float(periods.mean())
@@ -153,7 +178,15 @@ def measure(capture: Capture) -> dict:
             "Signal clips against the range limit — measurements are "
             f"understated. Re-capture on a range above {capture.range_v} V."
         )
-    return result
+    return _rounded(result)
+
+
+def _rounded(result: dict) -> dict:
+    """Round every float in a measurement dict; leave ints, bools and text."""
+    return {
+        k: round_sig(v) if isinstance(v, float) else v
+        for k, v in result.items()
+    }
 
 
 def detect_overrange(volts: np.ndarray, range_v: float) -> bool:
@@ -161,7 +194,9 @@ def detect_overrange(volts: np.ndarray, range_v: float) -> bool:
     return bool(np.any(np.abs(volts) >= OVERRANGE_FRAC * range_v))
 
 
-def downsample_minmax(volts: np.ndarray, dt_s: float, points: int) -> list[list[float]]:
+def downsample_minmax(
+    volts: np.ndarray, dt_s: float, points: int, digits: int = CURVE_DIGITS
+) -> list[list[float]]:
     """Decimate to ~`points` [time, volt] pairs, keeping the extremes.
 
     Every N-th sample would drop the spikes, which is the one thing an
@@ -172,8 +207,9 @@ def downsample_minmax(volts: np.ndarray, dt_s: float, points: int) -> list[list[
     n = volts.size
     if points <= 0:
         raise ValueError("points must be positive")
+    r = lambda x: round_sig(x, digits)  # noqa: E731 - local shorthand, used 6x
     if n <= points:
-        return [[i * dt_s, float(v)] for i, v in enumerate(volts)]
+        return [[r(i * dt_s), r(float(v))] for i, v in enumerate(volts)]
 
     buckets = max(1, points // 2)
     edges = np.linspace(0, n, buckets + 1, dtype=int)
@@ -185,7 +221,7 @@ def downsample_minmax(volts: np.ndarray, dt_s: float, points: int) -> list[list[
         i_min = start + int(chunk.argmin())
         i_max = start + int(chunk.argmax())
         first, second = sorted((i_min, i_max))
-        out.append([first * dt_s, float(volts[first])])
+        out.append([r(first * dt_s), r(float(volts[first]))])
         if second != first:
-            out.append([second * dt_s, float(volts[second])])
+            out.append([r(second * dt_s), r(float(volts[second]))])
     return out
