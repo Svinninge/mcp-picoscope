@@ -1,3 +1,4 @@
+# File version: v0.01
 """Verify the volt scale against a known DC source (e.g. a 1.5 V AA cell).
 
 Run:  .\\.venv\\Scripts\\python.exe scratch\\verify_volt_scale.py

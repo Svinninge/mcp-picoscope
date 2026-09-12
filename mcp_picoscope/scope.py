@@ -1,6 +1,5 @@
+# File version: v0.01
 """Scope abstraction: value types, backend protocol and the single owned session.
-
-v0.01
 
 Shared by server.py and every backend. The driver is not thread safe and the
 device can only be opened by one process, so all hardware access goes through

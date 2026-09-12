@@ -1,6 +1,5 @@
+# File version: v0.01
 """Simulated single-channel scope. No hardware, known answers.
-
-v0.01
 
 The mock is the development path for everything except backends/ps2000.py, and
 it is the reference the analysis tests measure against: it produces signals

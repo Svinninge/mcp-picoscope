@@ -1,4 +1,5 @@
-"""Smoke test over the real stdio transport. v0.01
+# File version: v0.02
+"""Smoke test over the real stdio transport.
 
 Tools existing in a registry is not the same as tools being callable: argument
 schemas, return serialisation and the resource URI only get exercised when a

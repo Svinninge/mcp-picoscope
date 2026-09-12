@@ -1,6 +1,5 @@
+# File version: v0.02
 """MCP surface for the PicoScope. Thin: it translates, it does not compute.
-
-v0.01
 
 Every tool answers with a summary — statistics, a decimated curve, a file path —
 and never with a raw sample array. A block capture is tens of thousands of
@@ -17,7 +16,7 @@ from typing import Any, Callable
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from . import __version__, ui
+from . import ui, version_line
 from .analysis import downsample_minmax, measure as measure_capture
 from .backends.mock import MockBackend, MockSignal
 from .export import export as export_file
@@ -37,7 +36,10 @@ server = MCPServer(
         "hardware is present. Call open_device first, then autoset for a quick look "
         "or configure_channel/configure_trigger/capture_block for a deliberate "
         "measurement. Captures stay on the server: tools answer with statistics, a "
-        "decimated curve and file paths, never with raw samples."
+        "decimated curve and file paths, never with raw samples. A live display "
+        "opens in a browser window on the first call, showing the trace, the "
+        "measurements and which tools have run; mention it to the user rather "
+        "than describing the waveform in words."
     ),
 )
 session = ScopeSession()
@@ -171,7 +173,7 @@ def get_server_info() -> dict:
     from .export import capture_dir
 
     return {
-        "version": f"System v{__version__}",
+        "version": version_line(),
         "capture_dir": str(capture_dir()),
         "ui_url": ui.url(),
         "ui_enabled": ui.enabled(),

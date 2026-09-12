@@ -1,6 +1,5 @@
+# File version: v0.01
 """Waveform measurements: amplitude statistics, frequency, duty cycle.
-
-v0.01
 
 Frequency comes from hysteresis mid-level crossings, not an FFT peak. A square
 wave puts most of its energy in harmonics and a low-frequency signal may not

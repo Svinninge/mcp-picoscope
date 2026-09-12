@@ -1,6 +1,5 @@
+# File version: v0.01
 """Local scope display, opened in an Edge app window when the server is used.
-
-v0.01
 
 The MCP session sees numbers; a person wants to see the waveform. This serves
 one page on 127.0.0.1 that polls the live session state, and opens Edge at it
@@ -30,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from . import version_line
 from .analysis import downsample_minmax, measure
 
 log = logging.getLogger(__name__)
@@ -170,7 +170,11 @@ def _ui_state() -> dict:
     """Everything the page draws, in one request."""
     session = _session
     if session is None:
-        return {"open": False, "activity": list(_activity)}
+        return {
+            "open": False,
+            "activity": list(_activity),
+            "version": version_line(),
+        }
 
     with session.lock:
         state = session.state()
@@ -184,6 +188,7 @@ def _ui_state() -> dict:
                 ),
             }
     state["activity"] = list(_activity)
+    state["version"] = version_line()
     state["simulated"] = state.get("backend") == "mock"
     return state
 

@@ -1,4 +1,5 @@
-"""Measurements against the mock's known answers. v0.01
+# File version: v0.01
+"""Measurements against the mock's known answers.
 
 The mock is the ground truth here: it knows the frequency, amplitude and duty
 cycle it generated, so every assertion below compares a measurement to a fact

@@ -72,6 +72,10 @@ Claude (MCP-klient)
         ▼
   mcp_picoscope/analysis.py      ← Vpp, RMS, frekvens, duty cycle
   mcp_picoscope/export.py        ← CSV / NPZ / PNG
+        │
+        ▼
+  mcp_picoscope/ui.py            ← lokal display (HTTP 8071) + Edge-fönster
+  mcp_picoscope/ui.html          ← sidan: kurva, mätvärden, MCP-aktivitet
 ```
 
 **Bärande designbeslut**
@@ -87,6 +91,10 @@ Claude (MCP-klient)
    (statistik, nedsamplad kurva, filsökväg), aldrig hela arrayen.
 4. **Explicit state.** Kanal- och triggerinställningar sätts med egna verktyg och
    går att läsa tillbaka, så att LLM:en kan resonera om aktuellt läge.
+5. **Displayen läser, styr aldrig** *(tillagt 2026-09-12)*. Sidan speglar samma
+   `ScopeSession` som verktygen skriver. Ett UI som också kunde trycka på knappar
+   hade behövt sessionslåset och ett svar på vem som får ändra vad mitt i en
+   mätning — det är en annan produkt.
 
 ---
 
@@ -150,6 +158,17 @@ läsbar resurs.
 - Timeout på trigg som aldrig löser ut.
 - Städa upp USB-handtaget vid avstängning.
 
+**Steg 6b — Live-display** ✅ 2026-09-12 *(tillkom under byggandet, fanns inte i
+den ursprungliga planen)*
+- Lokal HTTP-server i serverprocessen, sida på `127.0.0.1:8071`, öppnas i ett
+  Edge-fönster i app-läge vid **första** verktygsanropet.
+- Kroken sitter i `tool()`-dekoratorn — den enda punkt varje anrop passerar.
+- Visar kurvan på rutnät med V/div och ms/div, mätvärden, kanal/trigg,
+  versionsbanner och en logg över MCP-anrop. Uppdateras var 400:e ms.
+- Simulerade fångster märks **SIMULERAD** i orange, så en mock aldrig kan
+  misstas för en mätning.
+- `PICOSCOPE_UI=0` stänger av (testerna sätter det), `PICOSCOPE_UI_PORT` flyttar.
+
 **Steg 6 — Dokumentation** ✅ 2026-09-12
 - README med installation av PicoSDK, `.mcp.json`-exempel, exempeldialog.
 
@@ -175,6 +194,17 @@ läsbar resurs.
 - [x] Hela verktygsuppsättningen fungerar mot mock-backenden utan hårdvara. *(18 enhetstester + stdio-röktest, 2026-09-12)*
 - [x] README räcker för att sätta upp servern på en ny dator. *(2026-09-12)*
 - [ ] Taggad `v0.01` enligt det globala versionsregelverket.
+
+---
+
+## 7b. Miljövariabler
+
+| Variabel | Default | Effekt |
+|---|---|---|
+| `CAPTURE_DIR` | `./captures` | Var exporterade filer hamnar. |
+| `PICOSCOPE_UI` | `1` | `0` stänger av display och Edge-fönster. |
+| `PICOSCOPE_UI_PORT` | `8071` | Startport; tio portar provas uppåt. |
+| `PICOSDK_DIR` | *(auto)* | Katalog med `ps2000.dll` när autosökningen missar. |
 
 ---
 

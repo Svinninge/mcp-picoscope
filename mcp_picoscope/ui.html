@@ -1,4 +1,5 @@
 <!doctype html>
+<!-- File version: v0.02 -->
 <html lang="sv">
 <head>
 <meta charset="utf-8">
@@ -73,6 +74,7 @@
   <span class="pill off" id="status">ingen enhet</span>
   <span class="pill" id="device">—</span>
   <div class="spacer"></div>
+  <span class="pill" id="version">—</span>
   <span class="pill" id="clock">—</span>
 </header>
 
@@ -196,6 +198,7 @@ async function poll() {
   document.getElementById("device").textContent = s.device
     ? `${s.device.model} · ${s.device.serial}` : "—";
   document.getElementById("clock").textContent = new Date().toLocaleTimeString();
+  document.getElementById("version").textContent = s.version || "—";
 
   rows("channel", [
     ["Område", s.channel ? "±" + s.channel.range_v + " V" : "—"],

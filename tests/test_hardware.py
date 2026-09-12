@@ -1,4 +1,5 @@
-"""Hardware smoke test over stdio. Requires a real PicoScope. v0.01
+# File version: v0.02
+"""Hardware smoke test over stdio. Requires a real PicoScope.
 
 Skipped automatically when no device answers, so the suite still runs on a
 machine without hardware. This is the test that would have caught the driver

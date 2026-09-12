@@ -1,6 +1,5 @@
+# File version: v0.03
 """Real hardware backend for the PicoScope 2104 via the legacy ps2000 driver.
-
-v0.03
 
 STATUS: verified against the real device 2026-09-12 (PLAN.md step 0). The unit
 reports variant "2104", serial <serial>, hardware 4, driver 3.0.152.6217, and

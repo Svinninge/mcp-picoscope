@@ -1,3 +1,4 @@
+# File version: v0.01
 """PLAN.md step 0 — the gatekeeper. Talk to the real PS2104 or stop.
 
 Run:  .\.venv\Scripts\python.exe tools\step0_verify.py

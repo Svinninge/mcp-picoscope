@@ -112,6 +112,13 @@ mätning.
 | `PICOSCOPE_UI=0` | Ingen server, inget fönster. Sätt detta för obevakade körningar. |
 | `PICOSCOPE_UI_PORT` | Annan startport än 8071 (tio portar provas uppåt). |
 
+Displayen lever exakt så länge MCP-servern gör. För att titta på scopet utan en
+Claude-session igång, håll en egen session öppen:
+
+```powershell
+.\.venv\Scripts\python.exe tools\ui_session.py 3600 auto
+```
+
 ## Exempeldialog
 
 > **Du:** Öppna picoscopet och kör en autoset.

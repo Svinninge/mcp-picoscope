@@ -21,6 +21,17 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Nästa
 
+- 🔴 **Brus rapporteras som en frekvens.** Sett live 2026-09-12: med okopplad
+  sond valde `autoset` ±0,5 V, och 30 mV brus blev "456 Hz" — över
+  `MIN_SWING_FRAC` (2 % av området), alltså släpptes det igenom som en signal.
+  Amplitudtröskeln ensam räcker inte; **periodiciteten** måste också vägas in.
+  `period_jitter_pct` räknas redan ut — brus ger tiotals procent jitter, en
+  riktig signal någon tiondel. Vägra rapportera frekvens över en jittergräns.
+  Ett instrument som hittar på en siffra är värre än ett som säger "vet ej".
+
+- 🟢 **`hardware_present()` läser "upptagen" som "saknas".** Hårdvarutestet
+  hoppas över när enheten redan är öppen av en annan session — sant men
+  missvisande; det borde säga vilket.
 - 🟢 **Displayen visar bara senaste fångsten.** Fångstlistan finns i state men
   ritas inte — en klickbar historik vore billig.
 - 🟢 **Fönstret återöppnas inte av sig själv om man stänger det.** `open_ui()`

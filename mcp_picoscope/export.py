@@ -1,6 +1,5 @@
+# File version: v0.01
 """Capture export: CSV, NPZ and PNG.
-
-v0.01
 
 Files land under the capture directory (CAPTURE_DIR, default ./captures). The
 LLM never supplies a path — it picks a format and gets a path back.

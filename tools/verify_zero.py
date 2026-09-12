@@ -1,3 +1,4 @@
+# File version: v0.01
 """Measure the zero point on every range. Expects a shorted/0 V input.
 
 Offset is the other half of a calibration: the volt scale says how big a step

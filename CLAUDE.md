@@ -37,7 +37,15 @@ mcp_picoscope/backends/ps2000.py Riktig hårdvara via ps2000.dll. Verifierad mot
 tests/test_analysis.py           Mätningar mot mockens kända signaler
 tests/test_stdio.py              Röktest över riktig stdio-transport (mock)
 tests/test_hardware.py           Röktest mot riktigt scope; hoppas över utan enhet
+tools/step0_verify.py            Hårdvaruidentitet: variant, områden, timebaser
+tools/verify_volt_scale.py       Skalan mot känd spänning (MAX_ADC)
+tools/verify_zero.py             Offset, kortsluten ingång
+tools/ui_session.py              Håller en session öppen så displayen lever
 ```
+
+**Versioner:** `SYSTEM_VERSION` i `mcp_picoscope/__init__.py` speglar senaste
+git-tagg, `deploy_version.txt` deployen. Båda visas via `version_line()` — i
+`get_server_info()` och i displayens huvud, enligt det globala regelverket.
 
 ## Kör och testa
 
