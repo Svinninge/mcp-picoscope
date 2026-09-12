@@ -1,4 +1,4 @@
-# File version: v0.03
+# File version: v0.04
 """MCP surface for the PicoScope. Thin: it translates, it does not compute.
 
 Every tool answers with a summary — statistics, a decimated curve, a file path —
@@ -140,6 +140,7 @@ def open_device(backend: str = "auto") -> dict:
 @tool
 def close_device() -> dict:
     """Close the device and release the USB handle."""
+    control.stop_for_shutdown()  # no thread may keep capturing from it
     if not session.is_open:
         return {"open": False, "note": "No device was open."}
     session.backend.close()  # type: ignore[union-attr]
@@ -240,18 +241,9 @@ def configure_trigger(
     auto_trigger_ms is how long an edge trigger waits before capturing anyway;
     0 means wait forever, which can time out the capture.
     """
-    backend = session.require_open()
-    applied = backend.set_trigger(
-        TriggerConfig(mode, threshold_v, direction, delay_pct, auto_trigger_ms)
+    return control.set_trigger(
+        session, mode, threshold_v, direction, delay_pct, auto_trigger_ms
     )
-    session.trigger = applied
-    return {
-        "mode": applied.mode,
-        "threshold_v": applied.threshold_v,
-        "direction": applied.direction,
-        "delay_pct": applied.delay_pct,
-        "auto_trigger_ms": applied.auto_trigger_ms,
-    }
 
 
 @tool
@@ -324,14 +316,34 @@ def autoset() -> dict:
     return control.autoset(session)
 
 
+@tool
+def start_sweep(mode: str = "auto", window_s: float = 0.0) -> dict:
+    """Capture continuously until stopped. mode: 'auto' | 'normal' | 'single'.
+
+    'auto' sweeps whether or not the trigger fires, 'normal' only on a real
+    trigger, and 'single' captures once and stops — the three positions on a
+    bench scope. The window follows the measured frequency unless window_s
+    says otherwise. The display's Run/Single buttons call this same engine.
+    """
+    return control.start_sweep(session, mode, window_s or None)
+
+
+@tool
+def stop_sweep() -> dict:
+    """Stop the continuous capture started by start_sweep."""
+    return control.stop_sweep(session)
+
+
 # -- resource -------------------------------------------------------------
 
 
 @server.resource("picoscope://state")
 def state_resource() -> dict:
-    """Current backend, device, channel, trigger and held captures."""
+    """Current backend, device, channel, trigger, sweep and held captures."""
     with session.lock:
-        return session.state()
+        state = session.state()
+    state["sweep"] = control.sweep_status()
+    return state
 
 
 def main() -> None:
@@ -339,6 +351,7 @@ def main() -> None:
     try:
         server.run(transport="stdio")
     finally:
+        control.stop_for_shutdown()
         ui.stop()
         if session.backend is not None:
             session.backend.close()  # never leave the USB handle open

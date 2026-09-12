@@ -29,7 +29,7 @@ nedsamplad kurva och filsökväg, annars spränger en fångst kontextfönstret.
 mcp_picoscope/server.py          MCP-ytan. Tunn: översätter, räknar inte.
 mcp_picoscope/scope.py           Värdetyper, backend-protokoll, ScopeSession (låset)
 mcp_picoscope/analysis.py        Vpp/RMS/frekvens/duty + min/max-decimering
-mcp_picoscope/control.py         Åtgärder (autoset, fångst) — delade av MCP och sidan
+mcp_picoscope/control.py         Åtgärder + svepmotorn — delade av MCP och sidan
 mcp_picoscope/export.py          CSV / NPZ / PNG under captures/
 mcp_picoscope/ui.py              Lokal webbserver + Edge-start (port 8071)
 mcp_picoscope/ui.html            Sidan: kurva, mätvärden, MCP-aktivitet
@@ -146,6 +146,20 @@ energin i övertonerna och en långsam signal hinner inte två perioder i fönst
 Genomgångarna klarar båda och ger duty cycle på köpet. Nivån är **mittpunkten
 mellan min och max**, inte medelvärdet: en 20 %-fyrkant har ett medelvärde långt
 från sin egen mittpunkt, och mätt mot det blir varje sådan våg ~50 %.
+
+**Svepet är en tråd, och den har tre skyldigheter.** `SweepRunner` i
+`control.py` fångar av sig själv tills den stoppas. Den måste gå att stoppa
+(`threading.Event` + `join(5 s)`), den tar **sessionslåset per fångst och aldrig
+över loopen** (annars svälter MCP-anropen — `test_the_lock_is_free_between_sweeps`
+fäller det), och den måste överleva att en fångst misslyckas: **en trigg som
+aldrig löser ut är ett tillstånd, inte ett fel**, så loopen rapporterar och
+fortsätter. `close_device` och serveravslut stoppar den först.
+
+**Svepläget mappas på hårdvarutriggen.** `auto` behåller auto_trigger-räddningen,
+`normal` nollar den så att triggen måste lösa ut på riktigt — och armerar en
+edge-trigg om scopet står fritt löpande, annars vore knappen verkningslös i
+precis det läge enheten öppnar i. Nivån och flanken rör den aldrig; de är
+användarens.
 
 **Autoset letar snabb → långsam, aldrig tvärtom.** En för snabb tidbas visar för
 få flanker och avvisas för att den inget säger; en för långsam **aliasar** och

@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.10 -->
+<!-- File version: v0.11 -->
 <html lang="sv">
 <head>
 <meta charset="utf-8">
@@ -58,6 +58,10 @@
   }
   .action:hover:not(:disabled) { border-color: var(--ok); color: var(--ok); }
   .action:disabled { opacity: .45; cursor: default; }
+  .action.on { border-color: var(--ok); color: var(--ok); }
+  .sweep { display: flex; gap: 4px; flex: 0 0 auto; }
+  .sweep .action { padding: 2px 8px; }
+  #screen.dragging { cursor: ns-resize; }
 
   main {
     background: var(--bg); padding: var(--pad); display: flex;
@@ -116,7 +120,8 @@
   }
   @media (max-width: 560px) { #activity-section { display: none; } }
   @media (max-width: 440px) { .readout.p3 { display: none; } }
-  @media (max-width: 400px) { .action { display: none; } }
+  @media (max-width: 620px) { #normal, #single { display: none; } }
+  @media (max-width: 400px) { .action, .sweep { display: none; } }
   @media (max-width: 340px) { .readout.p2, aside { display: none; } }
   @media (max-height: 460px) { .divs { display: none; } .readout .v { font-size: 14px; } }
   @media (max-height: 340px) { .readouts { display: none; } }
@@ -131,6 +136,13 @@
   <span class="pill" id="version">—</span>
   <span class="pill" id="clock">—</span>
   <button id="autoset" class="action" title="Välj område och tidbas som visar signalen">Autoset</button>
+  <div class="sweep">
+    <button id="run" class="action" title="Svep kontinuerligt (auto)">Run</button>
+    <button id="normal" class="action" title="Svep bara på riktig trigg">Normal</button>
+    <button id="single" class="action" title="Ett enda svep">Single</button>
+    <button id="stop" class="action" title="Stoppa svepet">Stop</button>
+    <button id="slope" class="action" title="Triggflank">↑</button>
+  </div>
   <div class="zoom">
     <button id="zoom-out" title="Mindre (Ctrl+-)">−</button>
     <button id="zoom-reset" class="wide" title="Återställ zoom">100%</button>
@@ -264,6 +276,103 @@ autosetButton.onclick = async () => {
   }
 };
 
+// -- sweep and trigger -----------------------------------------------------
+// The buttons are the three positions on a bench scope: Run sweeps whether or
+// not the trigger fires, Normal only on a real trigger, Single captures once.
+// The server owns the thread that does it; the page only asks.
+const sweepButtons = {
+  run: document.getElementById("run"),
+  normal: document.getElementById("normal"),
+  single: document.getElementById("single"),
+  stop: document.getElementById("stop"),
+};
+const slopeButton = document.getElementById("slope");
+
+// What the trigger is set to, as far as the page knows. While a drag is in
+// progress the page leads and the server follows; at every other moment the
+// server's answer wins, so two surfaces cannot disagree about the level.
+let triggerLevel = 0;
+let triggerDirection = "rising";
+let triggerMode = "auto";
+let rangeV = 5;
+let dragging = false;
+
+async function control(query, label) {
+  try {
+    const r = await fetch("/control?" + query, { method: "POST" });
+    const body = await r.json();
+    if (!body.ok) flash(label + " misslyckades: " + body.error);
+    poll();
+    return body;
+  } catch (e) {
+    flash(label + " nådde inte servern.");
+    return null;
+  }
+}
+
+const sweepModes = { run: "auto", normal: "normal", single: "single", stop: "stop" };
+for (const [id, mode] of Object.entries(sweepModes)) {
+  sweepButtons[id].onclick = () => control("action=sweep&mode=" + mode, "Svep");
+}
+
+slopeButton.onclick = () => {
+  triggerDirection = triggerDirection === "rising" ? "falling" : "rising";
+  sendTrigger();
+};
+
+function sendTrigger() {
+  return control(
+    `action=trigger&level_v=${triggerLevel}&direction=${triggerDirection}&mode=edge`,
+    "Trigg"
+  );
+}
+
+// -- dragging the trigger level -------------------------------------------
+// The level is a voltage, the pointer is a pixel. One conversion, used by the
+// drawing and the drag alike, so the line cannot end up somewhere other than
+// where it was dropped.
+const GRAB_PX = 12;
+
+function levelToY(level) {
+  return viewH / 2 - (level / rangeV) * (viewH / 2);
+}
+
+function yToLevel(y) {
+  const level = ((viewH / 2 - y) / (viewH / 2)) * rangeV;
+  return Math.max(-rangeV, Math.min(rangeV, level));
+}
+
+function pointerY(event) {
+  const r = canvas.getBoundingClientRect();
+  return (event.clientY - r.top) / scale;
+}
+
+canvas.addEventListener("pointerdown", (event) => {
+  if (Math.abs(pointerY(event) - levelToY(triggerLevel)) > GRAB_PX) return;
+  dragging = true;
+  canvas.classList.add("dragging");
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  const near = Math.abs(pointerY(event) - levelToY(triggerLevel)) <= GRAB_PX;
+  canvas.style.cursor = dragging || near ? "ns-resize" : "default";
+  if (!dragging) return;
+  triggerLevel = yToLevel(pointerY(event));
+  draw();  // follow the finger; the server hears about it on release
+});
+
+canvas.addEventListener("pointerup", (event) => {
+  if (!dragging) return;
+  dragging = false;
+  canvas.classList.remove("dragging");
+  canvas.releasePointerCapture(event.pointerId);
+  triggerLevel = yToLevel(pointerY(event));
+  // Only on release: a capture per pixel of travel would queue up behind the
+  // session lock and the scope would lag the line by seconds.
+  sendTrigger().then(() => flash(`Triggnivå ${triggerLevel.toFixed(3)} V`));
+});
+
 document.getElementById("zoom-out").onclick = () => { applyScale(scale - SCALE_STEP); reportView(true); };
 document.getElementById("zoom-in").onclick = () => { applyScale(scale + SCALE_STEP); reportView(true); };
 document.getElementById("zoom-reset").onclick = () => { applyScale(1); reportView(true); };
@@ -334,6 +443,46 @@ function draw() {
     i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
   });
   ctx.stroke();
+  drawTrigger(w, h);
+}
+
+function drawTrigger(w, h) {
+  // Always drawn, armed or not: dragging this line is how the trigger gets
+  // armed in the first place, and a control you cannot see is not a control.
+  // Dim in auto mode, so it never claims the scope is waiting for something.
+  const armed = triggerMode === "edge";
+  const y = levelToY(triggerLevel);
+  if (y < -20 || y > h + 20) return;
+
+  ctx.save();
+  ctx.globalAlpha = armed ? 1 : 0.45;
+  ctx.strokeStyle = dragging ? "#f0a13a" : "#8a6a2a";
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, y + .5);
+  ctx.lineTo(w, y + .5);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // The handle is what says "this line can be dragged" — a dashed line alone
+  // reads as a measurement annotation.
+  ctx.fillStyle = dragging ? "#f0a13a" : "#8a6a2a";
+  ctx.beginPath();
+  ctx.moveTo(0, y - 6);
+  ctx.lineTo(11, y);
+  ctx.lineTo(0, y + 6);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = dragging ? "#f0a13a" : "#8b98a5";
+  ctx.font = "11px 'Segoe UI', sans-serif";
+  const arrow = triggerDirection === "rising" ? "↑" : "↓";
+  const label = armed
+    ? `${triggerLevel.toFixed(3)} V ${arrow}`
+    : `${triggerLevel.toFixed(3)} V ${arrow} (dra för att trigga)`;
+  ctx.fillText(label, 16, y - 4);
+  ctx.restore();
 }
 
 // -- readouts -------------------------------------------------------------
@@ -440,7 +589,29 @@ async function poll() {
     ["Nivå", s.trigger ? s.trigger.threshold_v + " V" : "—"],
     ["Flank", s.trigger ? s.trigger.direction : "—"],
     ["Auto", s.trigger ? s.trigger.auto_trigger_ms + " ms" : "—"],
+    ["Svep", s.sweep && s.sweep.running ? s.sweep.mode : "stoppat"],
   ]);
+
+  // The server's settings win — except mid-drag, when the finger leads.
+  if (s.trigger && !dragging) {
+    triggerLevel = s.trigger.threshold_v;
+    triggerDirection = s.trigger.direction;
+    triggerMode = s.trigger.mode;
+    slopeButton.textContent = triggerDirection === "rising" ? "↑" : "↓";
+  }
+  if (s.channel) rangeV = s.channel.range_v;
+
+  const sweeping = s.sweep && s.sweep.running ? s.sweep.mode : "stop";
+  for (const [id, mode] of Object.entries(sweepModes)) {
+    sweepButtons[id].classList.toggle("on", mode === sweeping);
+    sweepButtons[id].disabled = !s.open;
+  }
+  slopeButton.disabled = !s.open;
+  // A trigger that never fires is a state, not a fault — say so where the
+  // sweep mode is shown rather than hiding it in a log.
+  if (s.sweep && s.sweep.error && Date.now() > flashUntil) {
+    document.getElementById("capnote").textContent = s.sweep.error;
+  }
 
   const act = document.getElementById("activity");
   act.innerHTML = (s.activity && s.activity.length)

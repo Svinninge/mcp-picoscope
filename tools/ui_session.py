@@ -1,16 +1,13 @@
-# File version: v0.02
+# File version: v0.03
 """Hold an MCP session open so the display stays live.
 
 Usage: ui_session.py [seconds] [backend]   defaults: 3600, auto
 
-Captures continuously so the page has something current to draw. The MCP
-server, and therefore the UI server, lives exactly as long as this session.
-
-The window length follows the signal. A fixed one cannot work: 20 ms of an
-800 Hz sine is 16 periods and reads nicely, while the same 20 ms of an 11.8 kHz
-sine is 248 periods and draws as a solid block — three pixels per period, which
-no screen can resolve and no bench scope would show either. So after each
-capture the measured frequency sets the next window to about ten periods.
+The server captures on its own now: this opens the device, autosets, starts a
+sweep and then waits. It used to drive the captures itself, which meant two
+things wanted to own the instrument as soon as the display got a Run button —
+exactly what issue #1 warned about. The sweep engine in control.py is the one
+driver, and it follows the signal's frequency by itself.
 """
 
 import asyncio
@@ -28,21 +25,9 @@ from tests.test_stdio import payload  # noqa: E402
 
 SECONDS = int(sys.argv[1]) if len(sys.argv) > 1 else 3600
 BACKEND = sys.argv[2] if len(sys.argv) > 2 else "auto"
-PERIOD_S = 2
-
-# Roughly a screen's worth of signal.
-PERIODS_ON_SCREEN = 10
-MIN_WINDOW_S = 20e-6
-MAX_WINDOW_S = 0.2
-START_WINDOW_S = 0.02
-# Only retune when the window is off by more than this, or the timebase would
-# twitch on every capture as the measured frequency wobbles in its last digit.
-RETUNE_RATIO = 1.5
-SAMPLES = 4096
-
-
-def clamp(value: float) -> float:
-    return max(MIN_WINDOW_S, min(MAX_WINDOW_S, value))
+# How often this session pokes the server. The sweep does not need it; a live
+# MCP connection just makes the session's own state visible while it runs.
+REPORT_S = 30
 
 
 async def run() -> None:
@@ -67,32 +52,19 @@ async def run() -> None:
             auto = payload(await session.call_tool("autoset", {}))
             print("autoset:", "; ".join(auto["steps"]), flush=True)
 
-            window = START_WINDOW_S
-            freq = auto["measurements"]["frequency_hz"]
-            if freq:
-                window = clamp(PERIODS_ON_SCREEN / freq)
+            sweep = payload(await session.call_tool("start_sweep", {"mode": "auto"}))
+            print("svep:", sweep["mode"], "igång" if sweep["running"] else "STARTADE INTE",
+                  flush=True)
 
             loop = asyncio.get_event_loop()
             deadline = loop.time() + SECONDS
-            captures = 0
             while loop.time() < deadline:
-                block = payload(await session.call_tool("capture_block", {
-                    "duration_s": window, "samples": SAMPLES,
-                }))
-                captures += 1
-                freq = block["measurements"]["frequency_hz"]
-                if freq:
-                    wanted = clamp(PERIODS_ON_SCREEN / freq)
-                    if max(wanted / window, window / wanted) > RETUNE_RATIO:
-                        window = wanted
-                        print(
-                            f"följer signalen: {freq:.6g} Hz → {window * 1e3:.4g} ms "
-                            f"fönster ({PERIODS_ON_SCREEN} perioder)",
-                            flush=True,
-                        )
-                await asyncio.sleep(PERIOD_S)
+                await asyncio.sleep(min(REPORT_S, max(0.0, deadline - loop.time())))
+                status = payload(await session.call_tool("get_server_info", {}))
+                del status  # keeps the MCP session warm; the sweep needs no help
 
-            print(f"done after {captures} captures", flush=True)
+            print("stoppar svepet", flush=True)
+            payload(await session.call_tool("stop_sweep", {}))
             payload(await session.call_tool("close_device", {}))
 
 

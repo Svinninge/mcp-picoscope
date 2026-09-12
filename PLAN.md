@@ -106,8 +106,11 @@ Claude (MCP-klient)
    i varandra mitt i en sekvens av fångster), och **ett synligt resultat**
    (ändringen landar i sessionen, så `picoscope://state` talar sanning efteråt
    och LLM:en inte resonerar om ett område någon annan just ändrat).
-   Vitlistan står i `ui.CONTROLS`. Inget som matar ut signal får någonsin in
-   där; scopet är en passiv lyssnare och PS2104 saknar siggen.
+   Vitlistan står i `ui.CONTROLS` — idag `autoset`, `trigger`, `sweep`. Inget som
+   matar ut signal får någonsin in där; scopet är en passiv lyssnare och PS2104
+   saknar siggen. **Ett fjärde krav tillkom med svepet** (issue #1): den som
+   driver insamlingen måste gå att stoppa, ta låset per fångst och överleva att
+   en fångst misslyckas.
 
 ---
 
@@ -125,6 +128,7 @@ Claude (MCP-klient)
 | `capture_streaming(duration_s, rate)` | Långsam kontinuerlig insamling till fil. |
 | `measure(capture_id)` | Vpp, Vmin, Vmax, medel, RMS, frekvens, periodtid, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png`. Returnerar sökväg. |
+| `start_sweep(mode, window_s)` / `stop_sweep()` | Kontinuerlig insamling i en egen tråd: `auto`, `normal`, `single`. Låset tas per fångst, aldrig över loopen. |
 | `autoset()` | Provar spänningsområden och tidbaser tills signalen fyller skärmen rimligt — det som "AutoSetup"-knappen gör. Stegen går **snabb → långsam** och en frekvens tros bara vid ≥10 sampel/period; motsatt riktning gav ett alias (11,8 kHz rapporterat som 406 Hz). Finns även som knapp i displayen. |
 
 **Resurs:** `picoscope://state` — aktuell konfiguration och senaste fångst som

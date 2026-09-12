@@ -90,6 +90,8 @@ process i taget.
 | `measure(capture_id)` | Vpp, Vmin/Vmax, medel, RMS, frekvens, periodtid, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → sökväg. |
 | `autoset()` | Väljer område och tidbas som visar signalen. Letar över tidbaser snabb → långsam, så allt från 50 Hz till 1 MHz hittas. |
+| `start_sweep(mode, window_s)` | Fångar kontinuerligt. `auto` sveper oavsett trigg, `normal` bara på riktig trigg, `single` en gång. |
+| `stop_sweep()` | Stoppar svepet. |
 | `open_ui(force)` | Visar displayen; återanvänder fönstret som redan tittar. `force=true` ger ett extra. |
 
 **Resurs:** `picoscope://state` — backend, enhet, kanal, trigg och hållna fångster.
@@ -103,6 +105,21 @@ Första gången ett verktyg anropas startar servern en lokal sida på
 visar kurvan som ett oscilloskop gör — rutnät, V/div, ms/div — plus mätvärden,
 kanal- och trigginställningar, och en logg över vilka MCP-verktyg som anropats.
 Den uppdateras var 400:e ms.
+
+### Trigg och svep i displayen
+
+Knapparna **Run · Normal · Single · Stop** är de tre lägena på ett bänkscope:
+`Run` sveper oavsett om triggen löser ut, `Normal` bara på en riktig trigg, och
+`Single` fångar en gång och stannar. **Triggnivån dras med musen** i kurvfönstret
+— linjen syns alltid, dämpad när triggen inte är armerad, och att dra den armerar
+den. Pilknappen växlar stigande/fallande flank.
+
+En trigg som aldrig löser ut är ett **tillstånd, inte ett fel**: svepet fortsätter
+vänta och skriver ut varför under kurvan, i stället för att stanna.
+
+Servern äger tråden som fångar; sidan ber bara om det. Nivån skickas när du
+**släpper** — en fångst per pixel hade köat bakom sessionslåset och fått scopet
+att släpa efter linjen med sekunder.
 
 Sidan har en **Autoset**-knapp som kör exakt samma kod som MCP-verktyget, under
 samma lås — resultatet syns i aktivitetsloggen, så du och Claude ser vad den

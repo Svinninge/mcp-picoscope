@@ -206,7 +206,7 @@ def test_size_offset_is_learned_so_the_window_stops_growing(monkeypatch):
 def test_only_whitelisted_actions_run(monkeypatch):
     monkeypatch.setattr(ui, "_session", object())
     with pytest.raises(Exception) as exc:
-        ui.run_control("close_device")
+        ui.run_control("close_device", {})
     assert "Unknown action" in str(exc.value)
 
 
@@ -222,7 +222,7 @@ def test_autoset_from_the_page_runs_the_same_code_as_the_tool(monkeypatch):
         lambda s: calls.append(s)
         or {"steps": ["picked ±5 V"], "range_v": 5.0, "capture_id": "cap0007"},
     )
-    body = ui.run_control("autoset")
+    body = ui.run_control("autoset", {})
     assert calls == ["the-session"]
     assert body["ok"] and body["capture_id"] == "cap0007"
 
@@ -235,5 +235,112 @@ def test_a_control_action_shows_up_in_the_activity_log(monkeypatch):
     monkeypatch.setattr(
         control, "autoset", lambda s: {"steps": [], "range_v": 1.0, "capture_id": "c"}
     )
-    ui.run_control("autoset")
+    ui.run_control("autoset", {})
     assert ui._activity[0]["tool"] == "autoset"
+
+
+# -- sweep engine ---------------------------------------------------------
+# Who drives the acquisition was the open question in issue #1: a thread that
+# captures on its own must be stoppable, must not hold the lock across the
+# loop, and must survive a trigger that never fires.
+
+
+def sweep_session(signal=None):
+    from mcp_picoscope.backends.mock import MockBackend, MockSignal
+    from mcp_picoscope.scope import ScopeSession
+
+    session = ScopeSession()
+    backend = MockBackend(signal or MockSignal("sine", 1000.0, 1.0))
+    session.backend = backend
+    session.device = backend.open()
+    return session
+
+
+def test_a_sweep_captures_until_stopped():
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    try:
+        control.start_sweep(session, "auto")
+        deadline = time.monotonic() + 3
+        while control.sweep_status()["sweeps"] < 3 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert control.sweep_status()["running"] is True
+        assert control.sweep_status()["sweeps"] >= 3
+    finally:
+        status = control.stop_sweep(session)
+    assert status["running"] is False
+
+
+def test_single_stops_itself_after_one():
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    try:
+        control.start_sweep(session, "single")
+        deadline = time.monotonic() + 3
+        while control.sweep_status()["running"] and time.monotonic() < deadline:
+            time.sleep(0.05)
+        status = control.sweep_status()
+        assert status["running"] is False and status["sweeps"] == 1
+    finally:
+        control.stop_sweep(session)
+
+
+def test_the_lock_is_free_between_sweeps():
+    """An MCP call must never wait for the loop, only for one capture."""
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    try:
+        control.start_sweep(session, "auto")
+        time.sleep(0.3)
+        got_it = session.lock.acquire(timeout=2.0)
+        assert got_it, "the sweep held the session lock across its loop"
+        session.lock.release()
+    finally:
+        control.stop_sweep(session)
+
+
+def test_a_trigger_that_never_fires_is_a_state_not_a_crash():
+    from mcp_picoscope import control
+    from mcp_picoscope.scope import TriggerConfig
+
+    session = sweep_session()
+    session.backend.set_trigger(
+        TriggerConfig("edge", threshold_v=4.0, direction="rising", auto_trigger_ms=0)
+    )
+    session.trigger = session.backend.trigger
+    try:
+        control.start_sweep(session, "normal")
+        deadline = time.monotonic() + 3
+        while not control.sweep_status()["error"] and time.monotonic() < deadline:
+            time.sleep(0.05)
+        status = control.sweep_status()
+        assert status["running"] is True, "the sweep gave up instead of waiting"
+        assert "Trigger never fired" in status["error"]
+    finally:
+        control.stop_sweep(session)
+
+
+def test_normal_arms_a_trigger_that_was_free_running():
+    """Without this the button was a no-op from the state a scope opens in."""
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    assert session.trigger.mode == "auto"
+    try:
+        control.start_sweep(session, "normal")
+        time.sleep(0.3)
+        assert session.trigger.mode == "edge"
+        assert session.trigger.auto_trigger_ms == 0
+    finally:
+        control.stop_sweep(session)
+
+
+def test_a_level_dragged_with_a_mouse_is_not_stored_to_16_digits():
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    applied = control.set_trigger(session, "edge", 1.7111404667547336, "rising")
+    assert applied["threshold_v"] == 1.7111

@@ -15,11 +15,11 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Nästa
 
-- 🟡 **Interaktiv trigg i displayen** — spårad i
-  [issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1). Klicka och
-  dra triggnivån, single-svep, kontinuerlig omtriggning. Bryter principen att
-  displayen läser och aldrig styr; frågorna om ägarskap, gränser och
-  insamlingsloop står i issuen. Planfil krävs innan kod.
+- 🟡 **Tid/div i displayen** — kvar av
+  [issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1). Triggen är
+  byggd; tidbasen väljs fortfarande av autoset och svepets frekvensföljning.
+  Ett manuellt reglage måste varna när vald tidbas ger <10 sampel/period, och
+  läget (auto eller manuell) måste synas i `picoscope://state`.
 
 - 🟡 **`capture_streaming(duration_s, rate)`** — finns i PLAN.md §4 men är inte
   byggd; planens §8 föreslår block i v1 och streaming i v2. Skriv den när
@@ -58,6 +58,14 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Trigg och svep i displayen** (issue #1, delvis). Svepmotor i
+  `control.py` med egen tråd: `auto`, `normal`, `single`, stoppbar, låset per
+  fångst. Triggnivån dras med musen på canvasen och skickas vid släpp; linjen
+  syns alltid, dämpad när triggen inte är armerad. `normal` armerar en edge-trigg
+  om scopet står fritt löpande — annars var knappen verkningslös i just det läge
+  enheten öppnar i. En trigg som aldrig löser ut rapporteras som tillstånd, inte
+  fel. `tools/ui_session.py` driver inte längre egna fångster; servern äger
+  insamlingen. Kvar av issuen: tid/div.
 - **2026-09-12 — Flanktriggen verifierad mot hårdvara.** Sista oprövade
   hårdvaruvägen. Mätt på 800 Hz-sinusen som spridning i startpunkten över 12
   fångster: fritt löpande ±0,962 V (31,4 % av Vpp, 6/12 stigande), stigande

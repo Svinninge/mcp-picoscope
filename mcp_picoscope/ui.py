@@ -1,4 +1,4 @@
-# File version: v0.04
+# File version: v0.05
 """Local scope display, opened in an Edge app window when the server is used.
 
 The MCP session sees numbers; a person wants to see the waveform. This serves
@@ -464,7 +464,14 @@ def _open_edge(target: str) -> None:
 def _ui_state() -> dict:
     """Everything the page draws, in one request."""
     session = _session
-    base = {"version": version_line(), "activity": list(_activity), "view": view_prefs()}
+    from . import control  # late, same reason as in run_control
+
+    base = {
+        "version": version_line(),
+        "activity": list(_activity),
+        "view": view_prefs(),
+        "sweep": control.sweep_status(),
+    }
     if session is None:
         return {"open": False, **base}
 
@@ -487,10 +494,10 @@ def _ui_state() -> dict:
 # signal generator — and it runs the same code the MCP tool runs, under the
 # same lock. Anything added here needs the same three answers: one
 # implementation, one lock, and a result the session can report afterwards.
-CONTROLS = ("autoset",)
+CONTROLS = ("autoset", "trigger", "sweep")
 
 
-def run_control(action: str) -> dict:
+def run_control(action: str, values: dict) -> dict:
     """Perform a control action on behalf of the page."""
     from . import control  # imported late: control imports analysis, we import it too
 
@@ -500,15 +507,39 @@ def run_control(action: str) -> dict:
         )
     if _session is None:
         raise ScopeError("No session is attached to this display.")
-    result = control.autoset(_session)
+
+    if action == "autoset":
+        result = control.autoset(_session)
+        body = {
+            "steps": result["steps"],
+            "range_v": result["range_v"],
+            "capture_id": result["capture_id"],
+        }
+    elif action == "trigger":
+        level = _number(values, "level_v")
+        if level is None:
+            raise ScopeError("trigger needs level_v.")
+        current = _session.trigger
+        direction = (values.get("direction") or [current.direction])[0]
+        mode = (values.get("mode") or ["edge"])[0]
+        body = control.set_trigger(
+            _session,
+            mode=mode,
+            threshold_v=level,
+            direction=direction,
+            delay_pct=current.delay_pct,
+            auto_trigger_ms=current.auto_trigger_ms,
+        )
+    else:  # sweep
+        mode = (values.get("mode") or ["auto"])[0]
+        body = (
+            control.stop_sweep(_session)
+            if mode == "stop"
+            else control.start_sweep(_session, mode)
+        )
+
     record(action, "ok")
-    return {
-        "ok": True,
-        "action": action,
-        "steps": result["steps"],
-        "range_v": result["range_v"],
-        "capture_id": result["capture_id"],
-    }
+    return {"ok": True, "action": action, **body}
 
 
 def _number(values: dict, key: str) -> float | None:
@@ -560,7 +591,7 @@ class _Handler(BaseHTTPRequestHandler):
         """Run an action for the page, answering with why not rather than 500."""
         action = (query.get("action") or [""])[0]
         try:
-            body = run_control(action)
+            body = run_control(action, query)
         except ScopeError as exc:
             log.warning("control %s: %s", action, exc)
             record(action or "control", "fel", str(exc))
