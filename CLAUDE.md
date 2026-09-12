@@ -56,8 +56,10 @@ tekniska faktum.
 **Steg 0 är gjort (2026-09-12).** Enheten svarar: variant `2104`, serienr
 `<serial>`, hårdvara 4, drivrutin 3.0.152.6217. Uppmätt, inte antaget:
 spänningsområden **100 mV–20 V** (20 mV och 50 mV avvisas), timebase 0–19
-(20 ns–10,49 ms), **buffertdjup 8092 sampel**. Det som fortfarande är oprövat är
-**voltskalan mot en känd spänning** och **triggvägen** — se TODO.md.
+(20 ns–10,49 ms), **buffertdjup 8092 sampel**. Kalibreringen är verifierad i båda ändar: **skalan** mot en 1,5 V-cell
+(fyra områden inom 47 mV, `MAX_ADC = 32767` bekräftad) och **nollan** mot
+kortsluten ingång (värsta offset 0,14 LSB). Kvar: **frekvens ±1 % mot känd
+signal** och **flanktriggen** — se TODO.md.
 
 **Drivrutinen hittas inte av sig själv.** `picosdk` löser DLL:en med
 `ctypes.util.find_library`, som på Windows söker i `PATH` — och ingenting lägger

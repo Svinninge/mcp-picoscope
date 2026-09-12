@@ -3,9 +3,10 @@
 MCP-server som låter Claude styra och läsa av ett **PicoScope PS2104**
 USB-oscilloskop.
 
-> **Status: v1 körd mot riktig PS2104** (2026-09-12). Hela kedjan öppna →
-> konfigurera → fånga → mäta → exportera fungerar mot hårdvaran. Kvar: en mätning
-> mot en **känd signal**, som verifierar voltskalan och frekvensnoggrannheten.
+> **Status: v1 körd och kalibrerad mot riktig PS2104** (2026-09-12). Hela kedjan
+> öppna → konfigurera → fånga → mäta → exportera fungerar mot hårdvaran, och
+> både skalan (1,5 V-cell) och nollan (kortsluten ingång) är verifierade. Kvar:
+> frekvens ±1 % mot en känd periodisk signal, och flanktriggen.
 
 ## Tanken
 
@@ -61,7 +62,7 @@ claude mcp add --scope user picoscope -- C:\path\to\mcp-picoscope\.venv\Scripts\
 2. Koppla in PS2104:an. Utan drivrutin står den som `Status: Error` i
    Enhetshanteraren; med drivrutin som `PicoScope 2000 series PC Oscilloscope`.
 3. `pip install picosdk`.
-4. `.\.venv\Scripts\python.exe scratch\step0_verify.py` skriver ut variant,
+4. `.\.venv\Scripts\python.exe tools\step0_verify.py` skriver ut variant,
    serienummer, accepterade spänningsområden och hela timebase-tabellen.
 5. `open_device(backend="ps2000")` ska nu ge modell och serienummer.
 
@@ -116,6 +117,16 @@ Mocken bär facit: analysfunktionerna testas mot signaler med känd frekvens,
 amplitud och duty cycle. Hårdvarutestet begär `backend="ps2000"` explicit — det
 får inte falla tillbaka på mocken, för då hade en trasig drivrutinssökväg lyst
 grönt.
+
+### Verifieringsverktyg
+
+Mot riktig hårdvara, körbara var för sig:
+
+```powershell
+.\.venv\Scripts\python.exe tools\step0_verify.py        # variant, områden, timebase-tabell
+.\.venv\Scripts\python.exe toolserify_volt_scale.py   # skalan mot en känd spänning
+.\.venv\Scripts\python.exe toolserify_zero.py         # offset, kortsluten ingång
+```
 
 Arbetsregler och fallgropar: [SOUL.md](SOUL.md), [CLAUDE.md](CLAUDE.md),
 [LESSONS.md](LESSONS.md). Backlog: [TODO.md](TODO.md).

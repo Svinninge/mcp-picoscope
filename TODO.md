@@ -58,9 +58,12 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Nollpunkten verifierad.** Kortsluten ingång, alla åtta
+  områden: värsta offset 0,14 LSB, alltså under upplösningen. Brusgolvet på
+  ±0,1 V är 0,99 mV Vpp ≈ 1,3 LSB. Skript: `tools/verify_zero.py`.
 - **2026-09-12 — Voltskalan verifierad.** `MAX_ADC = 32767` mätt mot ett
   1,5 V alkaliskt AA: ±2/5/10/20 V läste 1,6007 / 1,6120 / 1,5931 / 1,6399 V —
   överens inom 47 mV, och absolutvärdet inom 7 % av cellens nominella.
-  Skript: `scratch/verify_volt_scale.py`.
+  Skript: `tools/verify_volt_scale.py`.
 - **2026-09-12 — Arbetsregler ärvda från ett tidigare projekt.** SOUL.md, CLAUDE.md,
   LESSONS.md och TODO.md anpassade för ett hårdvarunära MCP-projekt.
