@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<title>PicoScope</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #151b23; --line: #2a3441;
+    --ink: #e6edf3; --dim: #8b98a5; --trace: #3fe08f;
+    --warn: #f0a13a; --bad: #f05a5a; --ok: #3fe08f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
+    display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr;
+    height: 100vh; gap: 1px; background: var(--line);
+  }
+  header {
+    grid-column: 1 / -1; background: var(--panel);
+    display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+  }
+  h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  .pill {
+    font-size: 12px; padding: 2px 10px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--dim);
+  }
+  .pill.live { color: var(--ok); border-color: var(--ok); }
+  .pill.sim { color: var(--warn); border-color: var(--warn); }
+  .pill.off { color: var(--bad); border-color: var(--bad); }
+  .spacer { flex: 1; }
+  main {
+    background: var(--bg); padding: 14px; display: flex; flex-direction: column;
+    gap: 12px; min-width: 0; min-height: 0; overflow: hidden;
+  }
+  /* The canvas gets its size from this wrapper, never the other way round:
+     writing canvas.height sets the element's intrinsic size, and a bare
+     flex:1 canvas then grows the column on every resize until the readouts
+     are pushed off screen. */
+  .screenwrap { flex: 1; min-height: 0; position: relative; }
+  #screen {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+    background: #070b10; border: 1px solid var(--line); border-radius: 4px;
+  }
+  .readouts { display: flex; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
+  .divs { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .readout {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+    padding: 6px 12px; min-width: 104px;
+  }
+  .readout .k { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .4px; }
+  .readout .v { font-size: 17px; font-variant-numeric: tabular-nums; }
+  aside { background: var(--panel); padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  section h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--dim); margin: 0 0 6px; font-weight: 600;
+  }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 13px; }
+  dt { color: var(--dim); }
+  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .note { color: var(--warn); font-size: 12px; margin-top: 8px; }
+  ul { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+  li { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  li .t { color: var(--dim); font-variant-numeric: tabular-nums; }
+  li .n { flex: 1; }
+  li.err .n { color: var(--bad); }
+  .empty { color: var(--dim); font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>PicoScope</h1>
+  <span class="pill off" id="status">ingen enhet</span>
+  <span class="pill" id="device">—</span>
+  <div class="spacer"></div>
+  <span class="pill" id="clock">—</span>
+</header>
+
+<main>
+  <div class="screenwrap"><canvas id="screen"></canvas></div>
+  <div class="divs" id="divs">—</div>
+  <div class="readouts" id="readouts"></div>
+</main>
+
+<aside>
+  <section>
+    <h2>Kanal A</h2>
+    <dl id="channel"></dl>
+  </section>
+  <section>
+    <h2>Trigg</h2>
+    <dl id="trigger"></dl>
+  </section>
+  <section>
+    <h2>MCP-aktivitet</h2>
+    <ul id="activity"><li class="empty">väntar på anrop…</li></ul>
+  </section>
+</aside>
+
+<script>
+const GRID_X = 10, GRID_Y = 8;
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+let latest = null;
+
+function fit() {
+  const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  canvas.width = r.width * dpr;
+  canvas.height = r.height * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+window.addEventListener("resize", fit);
+
+function draw() {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  ctx.clearRect(0, 0, w, h);
+  ctx.strokeStyle = "#1c2531";
+  ctx.lineWidth = 1;
+  for (let i = 1; i < GRID_X; i++) {
+    const x = Math.round(w * i / GRID_X) + .5;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let i = 1; i < GRID_Y; i++) {
+    const y = Math.round(h * i / GRID_Y) + .5;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  ctx.strokeStyle = "#2a3441";
+  ctx.beginPath();
+  ctx.moveTo(0, Math.round(h / 2) + .5); ctx.lineTo(w, Math.round(h / 2) + .5);
+  ctx.stroke();
+
+  if (!latest || !latest.curve || latest.curve.length < 2) {
+    ctx.fillStyle = "#8b98a5";
+    ctx.font = "13px 'Segoe UI', sans-serif";
+    ctx.fillText("ingen fångst än", 14, 24);
+    return;
+  }
+  // Full scale is the selected range, so the trace sits where it would on the
+  // instrument: a signal filling the screen is a signal filling the range.
+  const range = latest.measurements.range_v;
+  const span = latest.measurements.duration_s || 1;
+  ctx.strokeStyle = "#3fe08f";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  latest.curve.forEach(([t, v], i) => {
+    const x = (t / span) * w;
+    const y = h / 2 - (v / range) * (h / 2);
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.stroke();
+}
+
+const fmt = (v, unit, digits = 4) =>
+  v === null || v === undefined ? "—" : `${Number(v).toPrecision(digits)} ${unit}`;
+
+function eng(hz) {
+  if (hz === null || hz === undefined) return "—";
+  if (hz >= 1e6) return (hz / 1e6).toPrecision(5) + " MHz";
+  if (hz >= 1e3) return (hz / 1e3).toPrecision(5) + " kHz";
+  return hz.toPrecision(5) + " Hz";
+}
+
+function readouts(m) {
+  const cells = [
+    ["Vpp", fmt(m.vpp_v, "V")], ["Vmin", fmt(m.vmin_v, "V")],
+    ["Vmax", fmt(m.vmax_v, "V")], ["Medel", fmt(m.mean_v, "V")],
+    ["RMS", fmt(m.rms_v, "V")], ["Frekvens", eng(m.frequency_hz)],
+    ["Duty", m.duty_cycle_pct == null ? "—" : m.duty_cycle_pct.toFixed(1) + " %"],
+    ["Samplingstakt", eng(m.sample_rate_hz).replace("Hz", "S/s")],
+  ];
+  document.getElementById("readouts").innerHTML = cells
+    .map(([k, v]) => `<div class="readout"><div class="k">${k}</div><div class="v">${v}</div></div>`)
+    .join("");
+}
+
+function rows(el, pairs) {
+  document.getElementById(el).innerHTML = pairs
+    .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+}
+
+async function poll() {
+  let s;
+  try {
+    s = await (await fetch("/state", { cache: "no-store" })).json();
+  } catch (e) { return; }
+
+  const status = document.getElementById("status");
+  if (!s.open) {
+    status.textContent = "ingen enhet"; status.className = "pill off";
+  } else if (s.simulated) {
+    status.textContent = "SIMULERAD"; status.className = "pill sim";
+  } else {
+    status.textContent = "hårdvara"; status.className = "pill live";
+  }
+  document.getElementById("device").textContent = s.device
+    ? `${s.device.model} · ${s.device.serial}` : "—";
+  document.getElementById("clock").textContent = new Date().toLocaleTimeString();
+
+  rows("channel", [
+    ["Område", s.channel ? "±" + s.channel.range_v + " V" : "—"],
+    ["Koppling", s.channel ? s.channel.coupling : "—"],
+    ["På", s.channel && s.channel.enabled ? "ja" : "nej"],
+  ]);
+  rows("trigger", [
+    ["Läge", s.trigger ? s.trigger.mode : "—"],
+    ["Nivå", s.trigger ? s.trigger.threshold_v + " V" : "—"],
+    ["Flank", s.trigger ? s.trigger.direction : "—"],
+    ["Auto", s.trigger ? s.trigger.auto_trigger_ms + " ms" : "—"],
+  ]);
+
+  const act = document.getElementById("activity");
+  act.innerHTML = (s.activity && s.activity.length)
+    ? s.activity.map(a =>
+        `<li class="${a.status === 'fel' ? 'err' : ''}">` +
+        `<span class="t">${a.time}</span><span class="n">${a.tool}</span>` +
+        `<span class="t">${a.status}</span></li>`).join("")
+    : '<li class="empty">väntar på anrop…</li>';
+
+  if (s.latest) {
+    latest = s.latest;
+    const m = s.latest.measurements;
+    readouts(m);
+    const perDiv = m.duration_s / GRID_X;
+    document.getElementById("divs").textContent =
+      `${(m.range_v / (GRID_Y / 2)).toPrecision(3)} V/div · ` +
+      `${eng(1 / perDiv).replace(" Hz", "")} → ` +
+      `${(perDiv * 1e3).toPrecision(3)} ms/div · ${m.samples} sampel · ` +
+      `${s.latest.capture_id}`;
+    draw();
+    const note = s.latest.measurements.note;
+    let el = document.getElementById("capnote");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "capnote"; el.className = "note";
+      document.querySelector("main").appendChild(el);
+    }
+    el.textContent = note || "";
+  }
+}
+
+fit();
+poll();
+setInterval(poll, 400);
+</script>
+</body>
+</html>

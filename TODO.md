@@ -21,6 +21,11 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Nästa
 
+- 🟢 **Displayen visar bara senaste fångsten.** Fångstlistan finns i state men
+  ritas inte — en klickbar historik vore billig.
+- 🟢 **Fönstret återöppnas inte av sig själv om man stänger det.** `open_ui()`
+  finns, men servern märker inte att fönstret är borta.
+
 - 🟡 **`capture_streaming(duration_s, rate)`** — finns i PLAN.md §4 men är inte
   byggd; planens §8 föreslår block i v1 och streaming i v2. Skriv den när
   blockvägen är verifierad mot hårdvara.
@@ -58,6 +63,11 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Live-display i Edge.** `ui.py` + `ui.html`: lokal server på
+  8071, kurva med rutnät och V/div, mätvärden, kanal/trigg och en logg över
+  MCP-anrop. Öppnas automatiskt i ett Edge-fönster vid första verktygsanropet
+  (en gång per process), `PICOSCOPE_UI=0` stänger av. Verifierad mot en
+  1 kHz-mocksignal: 1,0002 kHz och 50,0 % duty på skärmen.
 - **2026-09-12 — Nollpunkten verifierad.** Kortsluten ingång, alla åtta
   områden: värsta offset 0,14 LSB, alltså under upplösningen. Brusgolvet på
   ±0,1 V är 0,99 mV Vpp ≈ 1,3 LSB. Skript: `tools/verify_zero.py`.

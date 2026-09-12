@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -36,6 +37,9 @@ async def run() -> None:
         command=sys.executable,
         args=["-m", "mcp_picoscope.server"],
         cwd=str(ROOT),
+        # No Edge window from a test run: the display opens on the first tool
+        # call, and a suite makes dozens of them.
+        env={**os.environ, "PICOSCOPE_UI": "0"},
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

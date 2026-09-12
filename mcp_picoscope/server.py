@@ -17,7 +17,7 @@ from typing import Any, Callable
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from . import __version__
+from . import __version__, ui
 from .analysis import downsample_minmax, measure as measure_capture
 from .backends.mock import MockBackend, MockSignal
 from .export import export as export_file
@@ -59,19 +59,28 @@ def tool(fn: Callable) -> Callable:
 
     Anything else would surface as "Error executing tool X", which helps nobody
     on the other side of a stdio pipe.
+
+    This is also where the display hangs: every tool call passes through here
+    exactly once, so the window opens and the activity list fills in one place
+    instead of in twelve.
     """
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
+        ui.ensure_started(session)
         try:
             with session.lock:
-                return fn(*args, **kwargs)
+                result = fn(*args, **kwargs)
         except ScopeError as exc:
             log.warning("%s: %s", fn.__name__, exc)
+            ui.record(fn.__name__, "fel", str(exc))
             raise ToolError(str(exc)) from exc
         except Exception as exc:  # unexpected, but still must be readable
             log.exception("%s failed", fn.__name__)
+            ui.record(fn.__name__, "fel", str(exc))
             raise ToolError(f"{type(exc).__name__} in {fn.__name__}: {exc}") from exc
+        ui.record(fn.__name__, "ok")
+        return result
 
     return server.tool()(wrapper)
 
@@ -158,14 +167,38 @@ def get_device_info() -> dict:
 
 @tool
 def get_server_info() -> dict:
-    """Server version and where captures are written."""
+    """Server version, capture directory and the URL of the live display."""
     from .export import capture_dir
 
     return {
         "version": f"System v{__version__}",
         "capture_dir": str(capture_dir()),
+        "ui_url": ui.url(),
+        "ui_enabled": ui.enabled(),
         "tools": sorted(t.name for t in server._tool_manager.list_tools()),
     }
+
+
+@tool
+def open_ui() -> dict:
+    """Re-open the live display in an Edge window and return its URL.
+
+    The window opens by itself on the first tool call; use this when it was
+    closed, or to bring a second one up on another screen.
+    """
+    if not ui.enabled():
+        raise ScopeError(
+            f"The display is switched off ({ui.ENABLED_ENV}=0). Unset that "
+            "environment variable and restart the server to use it."
+        )
+    target = ui.ensure_started(session) or ui.url()
+    if target is None:
+        raise ScopeError(
+            "The display server could not start — no free port was available. "
+            f"Set {ui.PORT_ENV} to pick another one."
+        )
+    ui.reopen(target)
+    return {"url": target}
 
 
 # -- configuration --------------------------------------------------------
@@ -359,6 +392,7 @@ def main() -> None:
     try:
         server.run(transport="stdio")
     finally:
+        ui.stop()
         if session.backend is not None:
             session.backend.close()  # never leave the USB handle open
 

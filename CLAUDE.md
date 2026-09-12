@@ -30,6 +30,8 @@ mcp_picoscope/server.py          MCP-ytan. Tunn: översätter, räknar inte.
 mcp_picoscope/scope.py           Värdetyper, backend-protokoll, ScopeSession (låset)
 mcp_picoscope/analysis.py        Vpp/RMS/frekvens/duty + min/max-decimering
 mcp_picoscope/export.py          CSV / NPZ / PNG under captures/
+mcp_picoscope/ui.py              Lokal webbserver + Edge-start (port 8071)
+mcp_picoscope/ui.html            Sidan: kurva, mätvärden, MCP-aktivitet
 mcp_picoscope/backends/mock.py   Simulerad signalkälla — facit för testerna
 mcp_picoscope/backends/ps2000.py Riktig hårdvara via ps2000.dll. Verifierad mot PS2104.
 tests/test_analysis.py           Mätningar mot mockens kända signaler
@@ -67,6 +69,20 @@ Picos katalog där. `_ensure_dll_on_path()` i `backends/ps2000.py` gör det, med
 `PICOSDK_DIR` som övertrumfar. På den här maskinen finns `ps2000.dll` inte i
 `SDK\lib` utan i `PicoScope 7 T&M Stable\`, eftersom appen installerades i
 stället för SDK:n; båda fungerar.
+
+**UI:t öppnas en gång per serverprocess, inte per anrop.** Kroken sitter i
+`tool()`-dekoratorn eftersom varje verktygsanrop redan passerar den — men
+`_opened`-flaggan gör att Edge startas första gången, inte var tredje sekund.
+`PICOSCOPE_UI=0` stänger av alltihop; testerna sätter det, och allt som körs
+obevakat bör göra detsamma. Sidan **läser** sessionen och kan aldrig styra
+hårdvaran — ett UI som också kunde trycka på knappar hade behövt sessionslåset
+och en behörighetsfråga.
+
+**En `<canvas>` i en flexkolumn växer av sig själv.** Att skriva `canvas.height`
+sätter elementets *intrinsic* storlek, så en `flex: 1`-canvas trycker ut resten
+av kolumnen vid varje omritning. Därför ligger den `position: absolute` i en
+wrapper med `min-height: 0` och får sin storlek därifrån. Buggen syntes som att
+mätvärdesraden "försvann" och kurvan var avklippt nedtill.
 
 **Mocken imiterar hårdvara med flit.** Sampelintervallet snäpper till en
 2^n-timebase, sampel kvantiseras till 8 bitar av området, och en för stor signal

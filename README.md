@@ -89,9 +89,28 @@ process i taget.
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → sökväg. |
 | `autoset()` | Väljer område och tidbas som visar signalen — AutoSetup-knappen. |
 
+| `open_ui()` | Öppnar den levande displayen i ett Edge-fönster igen. |
+
 **Resurs:** `picoscope://state` — backend, enhet, kanal, trigg och hållna fångster.
 
 Exporter hamnar i `./captures/`, konfigurerbart via miljövariabeln `CAPTURE_DIR`.
+
+## Displayen
+
+Första gången ett verktyg anropas startar servern en lokal sida på
+`http://127.0.0.1:8071/` och öppnar den i ett **Edge-fönster i app-läge**. Den
+visar kurvan som ett oscilloskop gör — rutnät, V/div, ms/div — plus mätvärden,
+kanal- och trigginställningar, och en logg över vilka MCP-verktyg som anropats.
+Den uppdateras var 400:e ms.
+
+Sidan **läser** bara: den kan inte styra scopet, och en simulerad signal märks
+med en orange **SIMULERAD**-flagga så att en mock aldrig kan misstas för en
+mätning.
+
+| Miljövariabel | Effekt |
+|---|---|
+| `PICOSCOPE_UI=0` | Ingen server, inget fönster. Sätt detta för obevakade körningar. |
+| `PICOSCOPE_UI_PORT` | Annan startport än 8071 (tio portar provas uppåt). |
 
 ## Exempeldialog
 
