@@ -8,6 +8,17 @@ Format: en rubrik med datum, 1–2 meningar med regeln och kontexten som gav den
 
 ---
 
+## 2026-09-12 — Ett fönster överlever sin server, och sidan kan inte stänga sig själv
+
+Sju displayfönster stod öppna: varje testsession öppnade ett, och att stoppa
+processen dödade servern men lämnade fönstret kvar med en frusen mätning. Första
+fixen — `window.close()` i sidan — såg ut att fungera i ett prov där hela
+processträdet dödades, men **isolerat mätt vägrar Chromium** stänga ett fönster
+som skriptet inte öppnat. Den som öppnar ett fönster är den enda som kan stänga
+det: kör displayen i en **egen Edge-profil** så att dess processer går att
+identifiera och avsluta utan att röra användarens egen webbläsare. **Mät alltid
+en fix isolerat** — det första provet bevisade fel sak.
+
 ## 2026-09-12 — Skriv aldrig Windows-sökvägar med backslash-escape i ett heredoc-skript
 
 `"tools\verify_zero.py"` i en icke-rå Python-sträng blev `tools` + vertikaltab +

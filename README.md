@@ -114,6 +114,12 @@ startar något. Stänger du fönstret slutar pollarna, anspråket blir inaktuell
 inom sex sekunder, och nästa verktygsanrop tar tillbaka det.
 `open_ui(force=true)` är den enda vägen förbi regeln.
 
+**Fönstret städas undan.** Displayen körs i en egen Edge-profil, så ett fönster
+vars server avslutats kan stängas utan att din vanliga webbläsare berörs. Det
+sker när servern avslutas, och som säkerhet före varje ny start. (Sidan kan inte
+stänga sig själv — Chromium vägrar `window.close()` för fönster som skriptet
+inte öppnat — så den visar "Servern är borta" om den ändå blir ensam kvar.)
+
 **Fönstret kommer ihåg sig.** Samma fil bär zoom, position och storlek till
 nästa gång Edge öppnas. Den mäter också upp fönsterramen — skillnaden mellan
 var vi bad Edge placera fönstret och var innehållet hamnade — så att fönstret

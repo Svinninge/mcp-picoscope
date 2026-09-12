@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.06 -->
+<!-- File version: v0.07 -->
 <html lang="sv">
 <head>
 <meta charset="utf-8">
@@ -330,11 +330,40 @@ function rows(el, pairs) {
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 }
 
+// A window whose server has exited shows a scope that no longer exists, and
+// there is only one scope. Rather than sit there lying, the page closes itself.
+// Ten seconds of silence, not one: a slow reply must not close the display.
+const DEAD_AFTER_POLLS = 25;
+let failedPolls = 0;
+
+function giveUp() {
+  document.title = "PicoScope — stängd";
+  // Chromium refuses close() for a window the script did not open, and an
+  // Edge --app window is one of those — measured, not assumed. The server
+  // closes its own window when it exits; this is what the page can do when
+  // the server died without getting the chance. Say so plainly rather than
+  // leave a frozen measurement on screen.
+  window.close();
+  setTimeout(() => {
+    document.body.innerHTML =
+      '<div style="display:flex;align-items:center;justify-content:center;' +
+      'height:100vh;flex-direction:column;gap:8px;color:#8b98a5;' +
+      'font:14px/1.5 'Segoe UI',system-ui,sans-serif">' +
+      '<div style="font-size:15px;color:#e6edf3">Servern är borta</div>' +
+      '<div>Den här displayen hörde till en session som avslutats.</div>' +
+      '<div>Stäng fönstret — nästa mätning öppnar ett nytt.</div></div>';
+  }, 400);
+}
+
 async function poll() {
   let s;
   try {
     s = await (await fetch("/state", { cache: "no-store" })).json();
-  } catch (e) { return; }
+    failedPolls = 0;
+  } catch (e) {
+    if (++failedPolls === DEAD_AFTER_POLLS) giveUp();
+    return;
+  }
 
   const status = document.getElementById("status");
   if (!s.open) {

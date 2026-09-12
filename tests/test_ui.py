@@ -118,6 +118,9 @@ def test_unreadable_prefs_file_is_not_fatal(tmp_path, monkeypatch):
 def test_launch_arguments_carry_the_remembered_geometry(monkeypatch):
     seen: dict = {}
     monkeypatch.setattr(ui, "_edge_path", lambda: "msedge.exe")
+    # The sweep shells out through subprocess.run, which builds a Popen — stub
+    # it too, or stubbing Popen breaks the sweep instead of the launch.
+    monkeypatch.setattr(ui, "close_stale_windows", lambda: 0)
     monkeypatch.setattr(
         ui.subprocess, "Popen", lambda args, **kw: seen.update(args=args)
     )
@@ -136,3 +139,47 @@ def test_prefs_file_is_json_a_person_can_read(tmp_path, monkeypatch):
     ui._claim_window()
     data = json.loads((tmp_path / "ui.json").read_text(encoding="utf-8"))
     assert set(data) == {"view", "window"}
+
+
+def test_shutdown_closes_our_own_window(monkeypatch):
+    """A window must not outlive its server: the page cannot close itself."""
+    swept: list[int] = []
+    monkeypatch.setattr(ui, "_url", "http://127.0.0.1:8071/")
+    monkeypatch.setattr(ui, "close_stale_windows", lambda: swept.append(1) or 1)
+    ui._claim_window()
+    ui.stop()
+    assert swept == [1]
+    assert ui.window_claim() is None
+
+
+def test_shutdown_leaves_another_sessions_window_alone(monkeypatch):
+    """Its window is still showing a real scope; ours was never opened."""
+    swept: list[int] = []
+    monkeypatch.setattr(ui, "_url", "http://127.0.0.1:8095/")
+    monkeypatch.setattr(ui, "close_stale_windows", lambda: swept.append(1) or 1)
+    claim(url="http://127.0.0.1:8071/")
+    ui.stop()
+    assert swept == []
+    assert ui.window_claim() is not None
+
+
+def test_launch_runs_in_its_own_edge_profile(monkeypatch):
+    """The profile is what makes a stale window safe to close."""
+    seen: dict = {}
+    monkeypatch.setattr(ui, "_edge_path", lambda: "msedge.exe")
+    monkeypatch.setattr(ui, "close_stale_windows", lambda: 0)
+    monkeypatch.setattr(ui.subprocess, "Popen", lambda args, **kw: seen.update(args=args))
+    ui._open_edge("http://127.0.0.1:8071/")
+    assert f"--user-data-dir={ui.EDGE_PROFILE_DIR}" in seen["args"]
+
+
+def test_a_launch_sweeps_stale_windows_first(monkeypatch):
+    """We only get here with no window watching, so anything left is a corpse."""
+    order: list[str] = []
+    monkeypatch.setattr(ui, "_edge_path", lambda: "msedge.exe")
+    monkeypatch.setattr(ui, "close_stale_windows", lambda: order.append("sweep") or 0)
+    monkeypatch.setattr(
+        ui.subprocess, "Popen", lambda args, **kw: order.append("launch")
+    )
+    ui._open_edge("http://127.0.0.1:8071/")
+    assert order == ["sweep", "launch"]

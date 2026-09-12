@@ -89,6 +89,19 @@ Beslutet ligger i `should_launch()` just för att gå att testa utan webbläsare
 (`tests/test_ui.py`). `PICOSCOPE_UI_BROWSER=0` serverar sidan utan att öppna
 något.
 
+**Fönstret öppnas i en egen Edge-profil** (`%TEMP%\picoscope-edge-profile`).
+Det kostar en kall profilstart och köper det enda som spelar roll: varje process
+som använder katalogen är vår, så ett kvarglömt fönster går att stänga
+deterministiskt utan att röra Pers egen webbläsare. `close_stale_windows()`
+körs **före** varje start (då finns inget fönster som tittar, alltså är allt som
+står kvar ett lik) och i `stop()` när servern avslutas — men bara om anspråket
+är vårt, annars vore det en annan sessions levande fönster.
+
+**Sidan kan inte stänga sig själv.** `window.close()` vägras av Chromium för ett
+fönster som skriptet inte öppnat, och ett `--app`-fönster är ett sådant —
+uppmätt, inte antaget. Sidan visar därför en tydlig "Servern är borta"-ruta när
+den tappat kontakten i tio sekunder, men det är serverns svep som är garantin.
+
 **Displayen minns zoom, position och storlek** i samma fil, inte i
 `localStorage` — den är per origin, och porten byts så fort en annan process
 redan äger 8071. Ramoffseten (skillnaden mellan var vi bad Edge placera

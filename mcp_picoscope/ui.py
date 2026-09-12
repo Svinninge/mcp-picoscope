@@ -90,6 +90,15 @@ EDGE_CANDIDATES = (
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 )
 
+# The display runs in its own Edge profile. That costs a cold start, and buys
+# the one thing worth paying for: every process using this directory is ours,
+# so a leftover window can be closed deterministically without ever touching
+# the user's own browsing. Without it, a window whose server has exited sits
+# there forever showing a scope that no longer exists — and they accumulate,
+# one per session, each claiming to be an instrument.
+EDGE_PROFILE_DIR = Path(tempfile.gettempdir()) / "picoscope-edge-profile"
+SWEEP_TIMEOUT_S = 10
+
 _activity: deque[dict] = deque(maxlen=ACTIVITY_MAX)
 _state_lock = threading.Lock()
 _prefs_lock = threading.Lock()
@@ -294,12 +303,24 @@ def reopen(target: str, force: bool = False) -> bool:
     return True
 
 
-def stop() -> None:
+def stop(close_window: bool = True) -> None:
+    """Shut the display down, and take our window with us.
+
+    A window outlives its server otherwise: the page cannot close itself —
+    Chromium refuses window.close() for a window the script did not open
+    (measured, not assumed) — so the process that opened it has to. Only our
+    own window is closed: if the live claim belongs to another session, its
+    window is still showing a real scope.
+    """
     global _server, _url, _last_poll, _last_launch, _last_claim_write
+    ours = _url is not None and (window_claim() or {}).get("url") == _url
     if _server is not None:
         _server.shutdown()
         _server.server_close()
         _server = None
+    if close_window and ours:
+        write_prefs({"window": {}})  # release the claim before the sweep
+        close_stale_windows()
     _url = None
     _last_poll = 0.0
     _last_launch = 0.0
@@ -350,13 +371,45 @@ def _edge_path() -> str | None:
     return shutil.which("msedge")
 
 
+def close_stale_windows() -> int:
+    """Close display windows left over from servers that have exited.
+
+    Only processes using our own Edge profile are touched, so this can never
+    close the user's browsing. Returns how many were asked to stop; failures
+    are logged and swallowed, because a display is never worth a failed
+    measurement.
+    """
+    if not EDGE_PROFILE_DIR.exists():
+        return 0
+    script = (
+        "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+        f"Where-Object {{ $_.CommandLine -like '*{EDGE_PROFILE_DIR.name}*' }} | "
+        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction "
+        "SilentlyContinue; $_.ProcessId } | Measure-Object | "
+        "Select-Object -ExpandProperty Count"
+    )
+    try:
+        done = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=SWEEP_TIMEOUT_S,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        count = int((done.stdout or "0").strip() or 0)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        log.debug("could not sweep stale display windows: %s", exc)
+        return 0
+    if count:
+        log.info("closed %d stale display window process(es)", count)
+    return count
+
+
 def _open_edge(target: str) -> None:
     """Open the page in an Edge app window — no tabs, no address bar.
 
+    Sweeps first: we only get here when no window is watching, so anything
+    still on screen from our profile belongs to a server that has exited.
     Restores the size and position the window had when it was last seen, minus
-    the frame offset measured then. A separate user-data-dir would isolate it
-    from the user's own browsing but costs a cold profile every start; --app on
-    the normal profile opens fast and keeps its own window.
+    the frame offset measured then.
     """
     global _pending_launch
     edge = _edge_path()
@@ -364,10 +417,18 @@ def _open_edge(target: str) -> None:
         log.warning("Edge not found; open %s yourself", target)
         return
 
+    close_stale_windows()
     view = view_prefs()
     width = int(view.get("w") or DEFAULT_SIZE[0])
     height = int(view.get("h") or DEFAULT_SIZE[1])
-    args = [edge, f"--app={target}", f"--window-size={width},{height}"]
+    args = [
+        edge,
+        f"--user-data-dir={EDGE_PROFILE_DIR}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        f"--app={target}",
+        f"--window-size={width},{height}",
+    ]
     if "x" in view and "y" in view:
         x = int(view["x"]) - int(view.get("offset_x", 0))
         y = int(view["y"]) - int(view.get("offset_y", 0))

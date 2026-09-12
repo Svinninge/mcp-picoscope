@@ -73,6 +73,12 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Fönstret överlever inte längre sin server.** Sju fönster hade
+  hunnit samlas: varje testsession öppnade ett, och processen som dog lämnade
+  det kvar med en frusen mätning. Displayen kör nu i en egen Edge-profil och
+  `close_stale_windows()` stänger kvarglömda fönster — vid serveravslut och
+  före varje start. `window.close()` i sidan räcker inte: Chromium vägrar för
+  fönster som skriptet inte öppnat (uppmätt).
 - **2026-09-12 — Ett fönster per maskin, och det minns var det stod.**
   Två serverprocesser öppnade varsitt fönster trots att det finns ett enda
   PS2104 — vakten var per process. Beviset att ett fönster tittar skrivs nu till
