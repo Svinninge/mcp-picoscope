@@ -168,6 +168,9 @@ den ursprungliga planen)*
 - Simulerade fångster märks **SIMULERAD** i orange, så en mock aldrig kan
   misstas för en mätning.
 - `PICOSCOPE_UI=0` stänger av (testerna sätter det), `PICOSCOPE_UI_PORT` flyttar.
+- **Ett fönster per maskin**, inte per process: beviset att ett fönster tittar
+  skrivs till en delad fil i temp-katalogen som alla serverprocesser läser.
+  Samma fil minns zoom, position och storlek till nästa start.
 
 **Steg 6 — Dokumentation** ✅ 2026-09-12
 - README med installation av PicoSDK, `.mcp.json`-exempel, exempeldialog.
@@ -204,6 +207,7 @@ den ursprungliga planen)*
 | `CAPTURE_DIR` | `./captures` | Var exporterade filer hamnar. |
 | `PICOSCOPE_UI` | `1` | `0` stänger av display och Edge-fönster. |
 | `PICOSCOPE_UI_PORT` | `8071` | Startport; tio portar provas uppåt. |
+| `PICOSCOPE_UI_BROWSER` | `1` | `0` serverar sidan men öppnar aldrig ett fönster. |
 | `PICOSDK_DIR` | *(auto)* | Katalog med `ps2000.dll` när autosökningen missar. |
 
 ---

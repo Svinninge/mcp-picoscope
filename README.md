@@ -106,9 +106,18 @@ Sidan **läser** bara: den kan inte styra scopet, och en simulerad signal märks
 med en orange **SIMULERAD**-flagga så att en mock aldrig kan misstas för en
 mätning.
 
-**Ett fönster.** Att sidan pollar är beviset på att ett fönster redan tittar, så
-fler verktygsanrop öppnar inget nytt. Stänger du det kommer det tillbaka vid
-nästa anrop. `open_ui(force=true)` ger ett extra fönster till en annan skärm.
+**Ett fönster — på hela maskinen.** Det finns ett enda PS2104 på bänken, så ett
+andra fönster påstår att det finns två instrument. Att sidan pollar är beviset
+på att ett fönster tittar, och det beviset skrivs till en delad fil
+(`%TEMP%\mcp-picoscope-ui.json`) som **alla** serverprocesser läser innan de
+startar något. Stänger du fönstret slutar pollarna, anspråket blir inaktuellt
+inom sex sekunder, och nästa verktygsanrop tar tillbaka det.
+`open_ui(force=true)` är den enda vägen förbi regeln.
+
+**Fönstret kommer ihåg sig.** Samma fil bär zoom, position och storlek till
+nästa gång Edge öppnas. Den mäter också upp fönsterramen — skillnaden mellan
+var vi bad Edge placera fönstret och var innehållet hamnade — så att fönstret
+inte vandrar en titelrad nedåt för varje start.
 
 **Skalbar.** Knapparna −/100 %/+ i huvudet zoomar hela sidan (40–200 %) och
 valet kommer ihåg sig i webbläsaren — användbart på en 300 %-skalad
@@ -121,6 +130,7 @@ Kurvan och dess V/div är sist kvar — en kurva utan skala är ingen mätning.
 |---|---|
 | `PICOSCOPE_UI=0` | Ingen server, inget fönster. Sätt detta för obevakade körningar. |
 | `PICOSCOPE_UI_PORT` | Annan startport än 8071 (tio portar provas uppåt). |
+| `PICOSCOPE_UI_BROWSER=0` | Servera sidan men öppna aldrig ett fönster — för egen flik, eller för tester. |
 
 Displayen lever exakt så länge MCP-servern gör. För att titta på scopet utan en
 Claude-session igång, håll en egen session öppen:

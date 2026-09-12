@@ -1,20 +1,27 @@
-# File version: v0.02
+# File version: v0.03
 """Local scope display, opened in an Edge app window when the server is used.
 
 The MCP session sees numbers; a person wants to see the waveform. This serves
 one page on 127.0.0.1 that polls the live session state, and opens Edge at it
-the first time a tool is called.
+when no window is already showing one.
 
 Deliberately separate from the MCP surface: the page reads the same
 ScopeSession the tools write, and can never drive the hardware. A display that
 could also push buttons would need the session lock and a permission story;
 this needs neither.
 
-One window, not one per call. The page polls /state continuously, so a recent
-poll IS the proof that a window is already watching: no launch then. When the
-window is closed the polls stop, and the next tool call brings it back. A
-process-lifetime flag could not do that — it would leave you with no display
-for the rest of the session the moment you closed the window once.
+ONE WINDOW PER MACHINE, and it is a machine-wide rule, not a per-process one.
+There is a single PS2104 on this desk, so a second window is always a lie about
+how many instruments exist. Two mechanisms, in order:
+
+  * within a process: the page polls continuously, so a recent poll proves a
+    window is watching;
+  * across processes: that same proof is written to a small file in the temp
+    directory, which every server process reads before launching anything.
+
+The file also remembers the view — zoom, position and size — because the port
+can differ between runs and localStorage is per-origin, so the browser's own
+memory of the zoom is lost exactly when a second process starts.
 
 Set PICOSCOPE_UI=0 to disable it entirely — the test suite does, and so should
 anything running unattended.
@@ -27,6 +34,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from collections import deque
@@ -34,6 +42,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from . import version_line
 from .analysis import downsample_minmax, measure
@@ -44,6 +53,9 @@ DEFAULT_PORT = 8071
 PORT_ATTEMPTS = 10
 ENABLED_ENV = "PICOSCOPE_UI"
 PORT_ENV = "PICOSCOPE_UI_PORT"
+# Serve the page but never launch a browser. For tests, and for anyone who
+# would rather keep the page open in a tab of their own.
+BROWSER_ENV = "PICOSCOPE_UI_BROWSER"
 
 # The page is a picture, not a context window: it can afford far more points
 # than an MCP reply, but still not the whole record over HTTP every 400 ms.
@@ -57,6 +69,19 @@ VIEWER_TIMEOUT_S = 6.0
 # Edge needs a moment to start and load the page before its first poll. Without
 # a cooldown, the tool calls in that gap would each launch another window.
 LAUNCH_COOLDOWN_S = 15.0
+# How often the window claim is rewritten. Every poll would mean two disk
+# writes a second for a file nobody reads that often.
+CLAIM_WRITE_INTERVAL_S = 1.0
+
+# Shared between every server process for this user. Per-user rather than
+# system-wide: the scope belongs to whoever is logged in.
+PREFS_FILE = Path(tempfile.gettempdir()) / "mcp-picoscope-ui.json"
+
+# Sanity bounds for remembered geometry. A window left at -30000 because a
+# screen was unplugged must not be restored there, where it cannot be found.
+MIN_SIZE, MAX_SIZE = 240, 10000
+MAX_COORD = 20000
+DEFAULT_SIZE = (1000, 680)
 
 PAGE = Path(__file__).with_name("ui.html")
 
@@ -67,15 +92,29 @@ EDGE_CANDIDATES = (
 
 _activity: deque[dict] = deque(maxlen=ACTIVITY_MAX)
 _state_lock = threading.Lock()
+_prefs_lock = threading.Lock()
 _server: ThreadingHTTPServer | None = None
 _session: Any = None
 _url: str | None = None
 _last_poll = 0.0
 _last_launch = 0.0
+_last_claim_write = 0.0
+# Set to the position we asked Edge for, until the page reports where it
+# actually landed. The difference is the window frame, and subtracting it next
+# time is what stops a window creeping down the screen every session.
+_pending_launch: tuple[int, int] | None = None
+
+
+def _flag(name: str) -> bool:
+    return os.environ.get(name, "1") not in ("0", "false", "no")
 
 
 def enabled() -> bool:
-    return os.environ.get(ENABLED_ENV, "1") not in ("0", "false", "no")
+    return _flag(ENABLED_ENV)
+
+
+def browser_enabled() -> bool:
+    return _flag(BROWSER_ENV)
 
 
 def record(tool: str, status: str, detail: str = "") -> None:
@@ -90,13 +129,128 @@ def record(tool: str, status: str, detail: str = "") -> None:
     )
 
 
+# -- shared preferences and the window claim ------------------------------
+
+
+def read_prefs() -> dict:
+    """The shared file, or an empty dict. Never raises, never blocks a tool."""
+    try:
+        with PREFS_FILE.open(encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_prefs(patch: dict) -> None:
+    """Merge `patch` into the shared file, atomically.
+
+    Last writer wins. Two processes racing here can only disagree about which
+    of them owns a window, and the next poll a second later settles it — cheap
+    enough not to warrant a real lock.
+    """
+    with _prefs_lock:
+        data = read_prefs()
+        data.update(patch)
+        tmp = PREFS_FILE.with_suffix(".tmp")
+        try:
+            with tmp.open("w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+            os.replace(tmp, PREFS_FILE)
+        except OSError as exc:
+            log.debug("could not write %s: %s", PREFS_FILE, exc)
+
+
+def window_claim() -> dict | None:
+    """The live window claim, if any process still holds one."""
+    claim = read_prefs().get("window")
+    if not isinstance(claim, dict):
+        return None
+    try:
+        fresh = time.time() - float(claim.get("ts", 0)) <= VIEWER_TIMEOUT_S
+    except (TypeError, ValueError):
+        return None
+    return claim if fresh else None  # stale: the owner stopped polling
+
+
+def _claim_window() -> None:
+    """Say that a window is watching us — the proof other processes read."""
+    global _last_claim_write
+    now = time.monotonic()
+    if now - _last_claim_write < CLAIM_WRITE_INTERVAL_S:
+        return
+    _last_claim_write = now
+    write_prefs({"window": {"url": _url, "pid": os.getpid(), "ts": time.time()}})
+
+
 def viewer_present() -> bool:
-    """True when a page polled us recently — i.e. a window is open."""
+    """True when a page polled *this* server recently."""
     return (time.monotonic() - _last_poll) < VIEWER_TIMEOUT_S
 
 
+def view_prefs() -> dict:
+    """Remembered zoom, position and size."""
+    view = read_prefs().get("view")
+    return view if isinstance(view, dict) else {}
+
+
+def save_view(zoom=None, x=None, y=None, w=None, h=None) -> dict:
+    """Store what the page reports about itself, learning the frame offset.
+
+    The first report after a launch says how far Edge put the content from the
+    position we asked for — the title bar and borders. Remembering that
+    difference is what separates reopening where the user left the window from
+    creeping one title bar further down the screen each time.
+    """
+    global _pending_launch
+    view = view_prefs()
+    if zoom is not None and 0.2 <= zoom <= 4:
+        view["zoom"] = round(float(zoom), 2)
+    if x is not None and y is not None and abs(x) < MAX_COORD and abs(y) < MAX_COORD:
+        view["x"], view["y"] = int(x), int(y)
+        if _pending_launch is not None:
+            view["offset_x"] = int(x) - _pending_launch[0]
+            view["offset_y"] = int(y) - _pending_launch[1]
+            _pending_launch = None
+    if (
+        w is not None
+        and h is not None
+        and MIN_SIZE <= w <= MAX_SIZE
+        and MIN_SIZE <= h <= MAX_SIZE
+    ):
+        view["w"], view["h"] = int(w), int(h)
+    write_prefs({"view": view})
+    return view
+
+
+# -- lifecycle ------------------------------------------------------------
+
+
+def should_launch() -> tuple[bool, str]:
+    """Whether to open a window now, and why not when the answer is no.
+
+    Pure decision, kept out of ensure_started so it can be tested without
+    spawning a browser.
+    """
+    if not browser_enabled():
+        return False, f"{BROWSER_ENV}=0"
+    if viewer_present():
+        return False, "a window in this process is already watching"
+    claim = window_claim()
+    if claim is not None:
+        # There is one scope on this bench, so a second window would be a lie
+        # about how many instruments exist.
+        return False, (
+            f"another process (pid {claim.get('pid')}) has a window at "
+            f"{claim.get('url')}"
+        )
+    if time.monotonic() - _last_launch < LAUNCH_COOLDOWN_S:
+        return False, "a window is already starting"
+    return True, ""
+
+
 def ensure_started(session: Any) -> str | None:
-    """Start the UI server, and open a window only if none is watching.
+    """Start the UI server, and open a window only if none exists anywhere.
 
     Failing to show a window must never fail a measurement, so every error here
     is logged and swallowed.
@@ -106,10 +260,12 @@ def ensure_started(session: Any) -> str | None:
         return None
     try:
         url = _ensure_server(session)
-        if url is None or viewer_present():
+        if url is None:
+            return None
+        launch, why_not = should_launch()
+        if not launch:
+            log.debug("not opening a window: %s", why_not)
             return url
-        if time.monotonic() - _last_launch < LAUNCH_COOLDOWN_S:
-            return url  # one is already on its way up
         _last_launch = time.monotonic()
         _open_edge(url)
         return url
@@ -125,11 +281,13 @@ def url() -> str | None:
 def reopen(target: str, force: bool = False) -> bool:
     """Bring up a window on demand. Returns True if one was launched.
 
-    Without `force` this still respects a window that is already watching —
-    "show me the display" should not mean "give me a second copy of it".
+    Without `force` this respects any window already open, in this process or
+    another — "show me the display" must not mean "give me a second scope".
     """
     global _last_launch
-    if viewer_present() and not force:
+    if not force and not should_launch()[0]:
+        return False
+    if force and not browser_enabled():
         return False
     _last_launch = time.monotonic()
     _open_edge(target)
@@ -137,7 +295,7 @@ def reopen(target: str, force: bool = False) -> bool:
 
 
 def stop() -> None:
-    global _server, _url, _last_poll, _last_launch
+    global _server, _url, _last_poll, _last_launch, _last_claim_write
     if _server is not None:
         _server.shutdown()
         _server.server_close()
@@ -145,6 +303,22 @@ def stop() -> None:
     _url = None
     _last_poll = 0.0
     _last_launch = 0.0
+    _last_claim_write = 0.0
+
+
+class _Server(ThreadingHTTPServer):
+    """HTTP server that refuses to share its port.
+
+    ThreadingHTTPServer sets allow_reuse_address, which on Windows means
+    SO_REUSEADDR — and there that does not merely permit rebinding a socket in
+    TIME_WAIT, it lets a second process HIJACK a live listener. Two sessions
+    then both "own" 8071, connections land on whichever socket wins the race,
+    and the window you opened shows another session's scope. Refusing reuse
+    makes the bind fail honestly so the port scan moves to the next one.
+    """
+
+    allow_reuse_address = False
+    daemon_threads = True
 
 
 def _ensure_server(session: Any) -> str | None:
@@ -179,37 +353,47 @@ def _edge_path() -> str | None:
 def _open_edge(target: str) -> None:
     """Open the page in an Edge app window — no tabs, no address bar.
 
-    A separate user-data-dir would isolate it from the user's own browsing but
-    costs a cold profile every start; --app on the normal profile opens fast and
-    keeps its own window.
+    Restores the size and position the window had when it was last seen, minus
+    the frame offset measured then. A separate user-data-dir would isolate it
+    from the user's own browsing but costs a cold profile every start; --app on
+    the normal profile opens fast and keeps its own window.
     """
+    global _pending_launch
     edge = _edge_path()
     if edge is None:
         log.warning("Edge not found; open %s yourself", target)
         return
+
+    view = view_prefs()
+    width = int(view.get("w") or DEFAULT_SIZE[0])
+    height = int(view.get("h") or DEFAULT_SIZE[1])
+    args = [edge, f"--app={target}", f"--window-size={width},{height}"]
+    if "x" in view and "y" in view:
+        x = int(view["x"]) - int(view.get("offset_x", 0))
+        y = int(view["y"]) - int(view.get("offset_y", 0))
+        args.append(f"--window-position={x},{y}")
+        _pending_launch = (x, y)
+
     subprocess.Popen(
-        # Modest default size: this machine runs Windows at 300 % scaling, where
-        # a "normal" window fills the screen. The page carries its own zoom and
-        # remembers it, so the user only sets this once.
-        [edge, f"--app={target}", "--window-size=1000,680"],
+        args,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         # Detach: the window must outlive a single tool call, and must not hold
         # the stdio pipes the MCP protocol runs on.
         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
     )
-    log.info("opened Edge at %s", target)
+    log.info("opened Edge at %s (%dx%d)", target, width, height)
+
+
+# -- HTTP -----------------------------------------------------------------
 
 
 def _ui_state() -> dict:
     """Everything the page draws, in one request."""
     session = _session
+    base = {"version": version_line(), "activity": list(_activity), "view": view_prefs()}
     if session is None:
-        return {
-            "open": False,
-            "activity": list(_activity),
-            "version": version_line(),
-        }
+        return {"open": False, **base}
 
     with session.lock:
         state = session.state()
@@ -218,43 +402,46 @@ def _ui_state() -> dict:
             state["latest"] = {
                 "capture_id": latest.capture_id,
                 "measurements": measure(latest),
-                "curve": downsample_minmax(
-                    latest.volts, latest.dt_s, UI_CURVE_POINTS
-                ),
+                "curve": downsample_minmax(latest.volts, latest.dt_s, UI_CURVE_POINTS),
             }
-    state["activity"] = list(_activity)
-    state["version"] = version_line()
+    state.update(base)
     state["simulated"] = state.get("backend") == "mock"
     return state
 
 
-class _Server(ThreadingHTTPServer):
-    """HTTP server that refuses to share its port.
-
-    ThreadingHTTPServer sets allow_reuse_address, which on Windows means
-    SO_REUSEADDR — and there that does not merely permit rebinding a socket in
-    TIME_WAIT, it lets a second process HIJACK a live listener. Two sessions
-    then both "own" 8071, connections land on whichever socket wins the race,
-    and the window you opened shows another session's scope. Refusing reuse
-    makes the bind fail honestly so the port scan moves to the next one.
-    """
-
-    allow_reuse_address = False
-    daemon_threads = True
+def _number(values: dict, key: str) -> float | None:
+    try:
+        return float(values[key][0])
+    except (KeyError, IndexError, ValueError, TypeError):
+        return None
 
 
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's name
-        route = self.path.split("?")[0]
-        if route == "/":
+        global _last_poll
+        parsed = urlparse(self.path)
+        if parsed.path == "/":
             self._send(PAGE.read_bytes(), "text/html; charset=utf-8")
-        elif route == "/state":
-            global _last_poll
+        elif parsed.path == "/state":
             _last_poll = time.monotonic()  # proof that a window is watching
-            body = json.dumps(_ui_state()).encode("utf-8")
-            self._send(body, "application/json", cache=False)
+            _claim_window()  # ... and the proof other processes read
+            self._send(
+                json.dumps(_ui_state()).encode("utf-8"), "application/json", cache=False
+            )
+        elif parsed.path == "/view":
+            q = parse_qs(parsed.query)
+            view = save_view(
+                zoom=_number(q, "zoom"),
+                x=_number(q, "x"),
+                y=_number(q, "y"),
+                w=_number(q, "w"),
+                h=_number(q, "h"),
+            )
+            self._send(
+                json.dumps(view).encode("utf-8"), "application/json", cache=False
+            )
         else:
             self.send_error(404)
 

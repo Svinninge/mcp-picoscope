@@ -78,12 +78,22 @@ Picos katalog där. `_ensure_dll_on_path()` i `backends/ps2000.py` gör det, med
 `SDK\lib` utan i `PicoScope 7 T&M Stable\`, eftersom appen installerades i
 stället för SDK:n; båda fungerar.
 
-**Ett fönster, inte ett per anrop.** Kroken sitter i `tool()`-dekoratorn
-eftersom varje verktygsanrop redan passerar den. Att sidan **pollat nyligen** är
-beviset på att ett fönster redan tittar (`viewer_present()`, 6 s) — då startas
-inget nytt. Stänger du fönstret slutar pollarna och nästa verktygsanrop tar
-tillbaka det. En process-livstidsflagga kunde inte det: stängde du fönstret en
-gång var displayen borta resten av sessionen. Mätt: 67 verktygsanrop → 1 fönster.
+**Ett fönster på hela maskinen — inte per process.** Kroken sitter i
+`tool()`-dekoratorn eftersom varje verktygsanrop redan passerar den. Att sidan
+**pollat nyligen** är beviset på att ett fönster tittar (`viewer_present()`,
+6 s), och samma bevis skrivs till `%TEMP%\mcp-picoscope-ui.json` som varje
+serverprocess läser (`window_claim()`). Det räckte inte med en variabel i
+processen: två serverprocesser — Claude Codes registrerade server och en egen
+`tools/ui_session.py` — öppnade varsitt fönster, och det finns **ett** PS2104.
+Beslutet ligger i `should_launch()` just för att gå att testa utan webbläsare
+(`tests/test_ui.py`). `PICOSCOPE_UI_BROWSER=0` serverar sidan utan att öppna
+något.
+
+**Displayen minns zoom, position och storlek** i samma fil, inte i
+`localStorage` — den är per origin, och porten byts så fort en annan process
+redan äger 8071. Ramoffseten (skillnaden mellan var vi bad Edge placera
+fönstret och var innehållet hamnade) mäts upp vid första rapporten efter en
+start; utan den vandrar fönstret en titelrad nedåt varje gång.
 `PICOSCOPE_UI=0` stänger av alltihop; testerna sätter det, och allt som körs
 obevakat bör göra detsamma. Sidan **läser** sessionen och kan aldrig styra
 hårdvaran — ett UI som också kunde trycka på knappar hade behövt sessionslåset

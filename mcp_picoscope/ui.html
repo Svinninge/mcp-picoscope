@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.05 -->
+<!-- File version: v0.06 -->
 <html lang="sv">
 <head>
 <meta charset="utf-8">
@@ -165,8 +165,12 @@ let latest = null;
 const SCALE_KEY = "picoscope-ui-scale";
 const SCALE_MIN = 0.4, SCALE_MAX = 2.0, SCALE_STEP = 0.1;
 let scale = 1;
+let scaleFromServer = false;
 
 function readScale() {
+  // localStorage is the fast path only. It is keyed per origin, and the port
+  // changes when another process already owns 8071 — so the server's copy is
+  // the one that actually survives. The first /state reply overrides this.
   try {
     const v = parseFloat(localStorage.getItem(SCALE_KEY));
     return Number.isFinite(v) ? Math.min(SCALE_MAX, Math.max(SCALE_MIN, v)) : 1;
@@ -189,11 +193,39 @@ function applyScale(next) {
   fit();
 }
 
+// -- remembering the window ------------------------------------------------
+// Zoom, position and size are reported to the server, which keeps them in a
+// file shared by every session. The browser cannot be asked where to put a
+// window when it starts; only the process that launches it can, and only if
+// somebody wrote down where the last one was.
+let lastReported = "";
+
+function reportView(force) {
+  const g = {
+    zoom: scale,
+    x: Math.round(window.screenX), y: Math.round(window.screenY),
+    w: Math.round(window.outerWidth), h: Math.round(window.outerHeight),
+  };
+  const key = JSON.stringify(g);
+  if (!force && key === lastReported) return;
+  lastReported = key;
+  const q = new URLSearchParams(g).toString();
+  fetch("/view?" + q, { cache: "no-store" }).catch(() => {});
+}
+
+function applyServerView(view) {
+  if (!view || scaleFromServer) return;
+  scaleFromServer = true;
+  if (typeof view.zoom === "number" && Math.abs(view.zoom - scale) > 0.001) {
+    applyScale(view.zoom);
+  }
+}
+
 window.addEventListener("resize", () => { sizeToViewport(); fit(); });
 
-document.getElementById("zoom-out").onclick = () => applyScale(scale - SCALE_STEP);
-document.getElementById("zoom-in").onclick = () => applyScale(scale + SCALE_STEP);
-document.getElementById("zoom-reset").onclick = () => applyScale(1);
+document.getElementById("zoom-out").onclick = () => { applyScale(scale - SCALE_STEP); reportView(true); };
+document.getElementById("zoom-in").onclick = () => { applyScale(scale + SCALE_STEP); reportView(true); };
+document.getElementById("zoom-reset").onclick = () => { applyScale(1); reportView(true); };
 
 // -- drawing --------------------------------------------------------------
 
@@ -316,6 +348,7 @@ async function poll() {
     ? `${s.device.model} · ${s.device.serial}` : "—";
   document.getElementById("clock").textContent = new Date().toLocaleTimeString();
   document.getElementById("version").textContent = s.version || "—";
+  applyServerView(s.view);
 
   rows("channel", [
     ["Område", s.channel ? "±" + s.channel.range_v + " V" : "—"],
@@ -354,6 +387,10 @@ async function poll() {
 applyScale(readScale());
 poll();
 setInterval(poll, 400);
+// The window can be moved or resized without any event firing that we can see
+// from inside it, so the geometry is sampled — but only sent when it changed.
+setInterval(reportView, 1000);
+window.addEventListener("beforeunload", () => reportView(true));
 </script>
 </body>
 </html>

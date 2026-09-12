@@ -73,6 +73,13 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Ett fönster per maskin, och det minns var det stod.**
+  Två serverprocesser öppnade varsitt fönster trots att det finns ett enda
+  PS2104 — vakten var per process. Beviset att ett fönster tittar skrivs nu till
+  `%TEMP%/mcp-picoscope-ui.json` som alla processer läser (`should_launch()`,
+  testad i `tests/test_ui.py`). Samma fil bär zoom, position och storlek, med
+  fönsterramen uppmätt så att fönstret inte vandrar nedåt för varje start.
+  `PICOSCOPE_UI_BROWSER=0` serverar utan att öppna något.
 - **2026-09-12 — Siffrorna avrundade i allt som lämnar `analysis.py`.**
   Statistik 6 signifikanta siffror, kurvpunkter 5. Ett svar med hårdvaruformade
   tal (`adc/32767`) gick från 7 593 till 4 716 tecken — **38 % mindre**, kurvan
