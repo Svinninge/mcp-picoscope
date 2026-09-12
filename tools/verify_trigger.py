@@ -56,7 +56,7 @@ def report(label: str, firsts: list[float], slopes: list[float]) -> float:
     rising = sum(1 for s in slopes if s > 0)
     print(
         f"{label:26s} start {statistics.mean(firsts):+.3f} V "
-        f"±{spread:.3f} V   stigande {rising}/{len(slopes)}   "
+        f"±{spread:.3f} V   rising {rising}/{len(slopes)}   "
         f"min {min(firsts):+.3f} max {max(firsts):+.3f}"
     )
     return spread
@@ -65,7 +65,7 @@ def report(label: str, firsts: list[float], slopes: list[float]) -> float:
 def main() -> int:
     scope = PS2000Backend()
     info = scope.open()
-    print(f"{info.model} serienr {info.serial}\n")
+    print(f"{info.model} serial {info.serial}\n")
     try:
         # Find the signal with autoset rather than a guessed window: one fixed
         # survey length only sees one decade, which is the whole reason autoset
@@ -75,7 +75,7 @@ def main() -> int:
         session.device = info
         stats = control.autoset(session)["measurements"]
         if not stats["frequency_hz"]:
-            print("ingen periodisk signal på kanal A — koppla in generatorn")
+            print("no periodic signal on channel A — connect the generator")
             return 1
 
         freq = stats["frequency_hz"]
@@ -84,43 +84,43 @@ def main() -> int:
         mid = (stats["vmin_v"] + stats["vmax_v"]) / 2
         print(
             f"signal: {freq:.6g} Hz, {stats['vmin_v']:+.3f}..{stats['vmax_v']:+.3f} V, "
-            f"mitt {mid:+.3f} V, område ±{range_v} V, fönster {window * 1e3:.4g} ms\n"
+            f"midpoint {mid:+.3f} V, range ±{range_v} V, window {window * 1e3:.4g} ms\n"
         )
 
         scope.set_trigger(TriggerConfig(mode="auto"))
-        free = report("auto (fri) ", *start_stats(scope, window))
+        free = report("auto (free running)", *start_stats(scope, window))
 
         scope.set_trigger(
             TriggerConfig("edge", threshold_v=mid, direction="rising", auto_trigger_ms=1000)
         )
-        rising_spread = report("edge, stigande flank", *start_stats(scope, window))
+        rising_spread = report("edge, rising", *start_stats(scope, window))
 
         scope.set_trigger(
             TriggerConfig("edge", threshold_v=mid, direction="falling", auto_trigger_ms=1000)
         )
         falling, falling_slopes = start_stats(scope, window)
-        report("edge, fallande flank", falling, falling_slopes)
+        report("edge, falling", falling, falling_slopes)
 
         print()
         amplitude = stats["vmax_v"] - stats["vmin_v"]
-        print(f"spridning fritt löpande: {free / amplitude * 100:.1f} % av Vpp")
-        print(f"spridning med flanktrigg: {rising_spread / amplitude * 100:.1f} % av Vpp")
+        print(f"spread, free running: {free / amplitude * 100:.1f} % of Vpp")
+        print(f"spread, edge triggered: {rising_spread / amplitude * 100:.1f} % of Vpp")
         triggered = rising_spread < free / 3
-        print("triggen håller startpunkten:", "JA" if triggered else "NEJ")
+        print("the trigger holds the starting point:", "YES" if triggered else "NO")
         falling_ok = sum(1 for s in falling_slopes if s < 0) >= CAPTURES - 1
-        print("fallande flank ger fallande start:", "JA" if falling_ok else "NEJ")
+        print("falling edge gives a falling start:", "YES" if falling_ok else "NO")
 
-        print("\nfelvägar:")
+        print("\nfailure paths:")
         outside = range_v * 0.95
         scope.set_trigger(
             TriggerConfig("edge", threshold_v=outside, direction="rising", auto_trigger_ms=0)
         )
         try:
             scope.capture_block(window, 4096)
-            print("  timeout vid omöjlig nivå: NEJ — fångsten returnerade ändå")
+            print("  timeout at an impossible level: NO — the capture returned anyway")
             timeout_ok = False
         except ScopeError as exc:
-            print(f"  timeout vid omöjlig nivå: JA — {str(exc)[:80]}...")
+            print(f"  timeout at an impossible level: YES — {str(exc)[:80]}...")
             timeout_ok = True
 
         scope.set_trigger(
@@ -129,18 +129,18 @@ def main() -> int:
         try:
             cap = scope.capture_block(window, 4096)
             rescue_ok = cap.volts.size > 0
-            print(f"  auto_trigger räddar: {'JA' if rescue_ok else 'NEJ'} "
-                  f"({cap.volts.size} sampel)")
+            print(f"  auto_trigger rescues: {'YES' if rescue_ok else 'NO'} "
+                  f"({cap.volts.size} samples)")
         except ScopeError as exc:
-            print(f"  auto_trigger räddar: NEJ — {exc}")
+            print(f"  auto_trigger rescues: NO — {exc}")
             rescue_ok = False
 
         print()
         ok = triggered and falling_ok and timeout_ok and rescue_ok
-        print("FLANKTRIGG VERIFIERAD" if ok else "NÅGOT STÄMMER INTE — se ovan")
+        print("EDGE TRIGGER VERIFIED" if ok else "SOMETHING IS WRONG — see above")
         return 0 if ok else 1
     except ScopeError as exc:
-        print("FEL:", exc)
+        print("ERROR:", exc)
         return 1
     finally:
         scope.close()

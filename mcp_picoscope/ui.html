@@ -130,23 +130,23 @@
 <body>
 <header>
   <h1>PicoScope</h1>
-  <span class="pill off" id="status">ingen enhet</span>
+  <span class="pill off" id="status">no device</span>
   <span class="pill" id="device">—</span>
   <div class="spacer"></div>
   <span class="pill" id="version">—</span>
   <span class="pill" id="clock">—</span>
-  <button id="autoset" class="action" title="Välj område och tidbas som visar signalen">Autoset</button>
+  <button id="autoset" class="action" title="Pick a range and timebase that show the signal">Autoset</button>
   <div class="sweep">
-    <button id="run" class="action" title="Svep kontinuerligt (auto)">Run</button>
-    <button id="normal" class="action" title="Svep bara på riktig trigg">Normal</button>
-    <button id="single" class="action" title="Ett enda svep">Single</button>
-    <button id="stop" class="action" title="Stoppa svepet">Stop</button>
-    <button id="slope" class="action" title="Triggflank">↑</button>
+    <button id="run" class="action" title="Sweep continuously (auto)">Run</button>
+    <button id="normal" class="action" title="Sweep only on a real trigger">Normal</button>
+    <button id="single" class="action" title="A single sweep">Single</button>
+    <button id="stop" class="action" title="Stop the sweep">Stop</button>
+    <button id="slope" class="action" title="Trigger edge">↑</button>
   </div>
   <div class="zoom">
-    <button id="zoom-out" title="Mindre (Ctrl+-)">−</button>
-    <button id="zoom-reset" class="wide" title="Återställ zoom">100%</button>
-    <button id="zoom-in" title="Större (Ctrl++)">+</button>
+    <button id="zoom-out" title="Smaller (Ctrl+-)">−</button>
+    <button id="zoom-reset" class="wide" title="Reset zoom">100%</button>
+    <button id="zoom-in" title="Larger (Ctrl++)">+</button>
   </div>
 </header>
 
@@ -159,16 +159,16 @@
 
 <aside>
   <section>
-    <h2>Kanal A</h2>
+    <h2>Channel A</h2>
     <dl id="channel"></dl>
   </section>
   <section>
-    <h2>Trigg</h2>
+    <h2>Trigger</h2>
     <dl id="trigger"></dl>
   </section>
   <section id="activity-section">
-    <h2>MCP-aktivitet</h2>
-    <ul id="activity"><li class="empty">väntar på anrop…</li></ul>
+    <h2>MCP activity</h2>
+    <ul id="activity"><li class="empty">waiting for calls…</li></ul>
   </section>
 </aside>
 
@@ -266,10 +266,10 @@ autosetButton.onclick = async () => {
   try {
     const r = await fetch("/control?action=autoset", { method: "POST" });
     const body = await r.json();
-    flash(body.ok ? body.steps.join(" · ") : "Autoset misslyckades: " + body.error);
+    flash(body.ok ? body.steps.join(" · ") : "Autoset failed: " + body.error);
     poll();
   } catch (e) {
-    flash("Autoset nådde inte servern.");
+    flash("Autoset could not reach the server.");
   } finally {
     autosetButton.textContent = "Autoset";
     autosetButton.disabled = false;
@@ -301,18 +301,18 @@ async function control(query, label) {
   try {
     const r = await fetch("/control?" + query, { method: "POST" });
     const body = await r.json();
-    if (!body.ok) flash(label + " misslyckades: " + body.error);
+    if (!body.ok) flash(label + " failed: " + body.error);
     poll();
     return body;
   } catch (e) {
-    flash(label + " nådde inte servern.");
+    flash(label + " could not reach the server.");
     return null;
   }
 }
 
 const sweepModes = { run: "auto", normal: "normal", single: "single", stop: "stop" };
 for (const [id, mode] of Object.entries(sweepModes)) {
-  sweepButtons[id].onclick = () => control("action=sweep&mode=" + mode, "Svep");
+  sweepButtons[id].onclick = () => control("action=sweep&mode=" + mode, "Sweep");
 }
 
 slopeButton.onclick = () => {
@@ -323,7 +323,7 @@ slopeButton.onclick = () => {
 function sendTrigger() {
   return control(
     `action=trigger&level_v=${triggerLevel}&direction=${triggerDirection}&mode=edge`,
-    "Trigg"
+    "Trigger"
   );
 }
 
@@ -370,7 +370,7 @@ canvas.addEventListener("pointerup", (event) => {
   triggerLevel = yToLevel(pointerY(event));
   // Only on release: a capture per pixel of travel would queue up behind the
   // session lock and the scope would lag the line by seconds.
-  sendTrigger().then(() => flash(`Triggnivå ${triggerLevel.toFixed(3)} V`));
+  sendTrigger().then(() => flash(`Trigger level ${triggerLevel.toFixed(3)} V`));
 });
 
 document.getElementById("zoom-out").onclick = () => { applyScale(scale - SCALE_STEP); reportView(true); };
@@ -427,7 +427,7 @@ function draw() {
   if (!latest || !latest.curve || latest.curve.length < 2) {
     ctx.fillStyle = "#8b98a5";
     ctx.font = "12px 'Segoe UI', sans-serif";
-    ctx.fillText("ingen fångst än", 10, 18);
+    ctx.fillText("no capture yet", 10, 18);
     return;
   }
   // Full scale is the selected range, so the trace sits where it would on the
@@ -480,7 +480,7 @@ function drawTrigger(w, h) {
   const arrow = triggerDirection === "rising" ? "↑" : "↓";
   const label = armed
     ? `${triggerLevel.toFixed(3)} V ${arrow}`
-    : `${triggerLevel.toFixed(3)} V ${arrow} (dra för att trigga)`;
+    : `${triggerLevel.toFixed(3)} V ${arrow} (drag to arm)`;
   ctx.fillText(label, 16, y - 4);
   ctx.restore();
 }
@@ -501,13 +501,13 @@ function readouts(m) {
   // p1 survives every window size, p3 goes first.
   const cells = [
     ["p1", "Vpp", fmt(m.vpp_v, "V")],
-    ["p1", "Frekvens", eng(m.frequency_hz)],
+    ["p1", "Frequency", eng(m.frequency_hz)],
     ["p2", "Vmin", fmt(m.vmin_v, "V")],
     ["p2", "Vmax", fmt(m.vmax_v, "V")],
-    ["p2", "Medel", fmt(m.mean_v, "V")],
+    ["p2", "Mean", fmt(m.mean_v, "V")],
     ["p3", "RMS", fmt(m.rms_v, "V")],
     ["p3", "Duty", m.duty_cycle_pct == null ? "—" : m.duty_cycle_pct.toFixed(1) + " %"],
-    ["p3", "Samplingstakt", eng(m.sample_rate_hz).replace("Hz", "S/s")],
+    ["p3", "Sample rate", eng(m.sample_rate_hz).replace("Hz", "S/s")],
   ];
   document.getElementById("readouts").innerHTML = cells
     .map(([p, k, v]) =>
@@ -527,7 +527,7 @@ const DEAD_AFTER_POLLS = 25;
 let failedPolls = 0;
 
 function giveUp() {
-  document.title = "PicoScope — stängd";
+  document.title = "PicoScope — closed";
   // Chromium refuses close() for a window the script did not open, and an
   // Edge --app window is one of those — measured, not assumed. The server
   // closes its own window when it exits; this is what the page can do when the
@@ -544,11 +544,11 @@ function giveUp() {
       "color:#8b98a5");
     const head = document.createElement("div");
     head.setAttribute("style", "font-size:15px;color:#e6edf3");
-    head.textContent = "Servern är borta";
+    head.textContent = "The server is gone";
     const line1 = document.createElement("div");
-    line1.textContent = "Den här displayen hörde till en session som avslutats.";
+    line1.textContent = "This display belonged to a session that has ended.";
     const line2 = document.createElement("div");
-    line2.textContent = "Stäng fönstret — nästa mätning öppnar ett nytt.";
+    line2.textContent = "Close the window — the next measurement opens a new one.";
     wrap.append(head, line1, line2);
     document.body.replaceChildren(wrap);
   }, 400);
@@ -566,11 +566,11 @@ async function poll() {
 
   const status = document.getElementById("status");
   if (!s.open) {
-    status.textContent = "ingen enhet"; status.className = "pill off";
+    status.textContent = "no device"; status.className = "pill off";
   } else if (s.simulated) {
-    status.textContent = "SIMULERAD"; status.className = "pill sim";
+    status.textContent = "SIMULATED"; status.className = "pill sim";
   } else {
-    status.textContent = "hårdvara"; status.className = "pill live";
+    status.textContent = "hardware"; status.className = "pill live";
   }
   document.getElementById("device").textContent = s.device
     ? `${s.device.model} · ${s.device.serial}` : "—";
@@ -580,16 +580,16 @@ async function poll() {
   applyServerView(s.view);
 
   rows("channel", [
-    ["Område", s.channel ? "±" + s.channel.range_v + " V" : "—"],
-    ["Koppling", s.channel ? s.channel.coupling : "—"],
-    ["På", s.channel && s.channel.enabled ? "ja" : "nej"],
+    ["Range", s.channel ? "±" + s.channel.range_v + " V" : "—"],
+    ["Coupling", s.channel ? s.channel.coupling : "—"],
+    ["Enabled", s.channel && s.channel.enabled ? "yes" : "no"],
   ]);
   rows("trigger", [
-    ["Läge", s.trigger ? s.trigger.mode : "—"],
-    ["Nivå", s.trigger ? s.trigger.threshold_v + " V" : "—"],
-    ["Flank", s.trigger ? s.trigger.direction : "—"],
+    ["Mode", s.trigger ? s.trigger.mode : "—"],
+    ["Level", s.trigger ? s.trigger.threshold_v + " V" : "—"],
+    ["Edge", s.trigger ? s.trigger.direction : "—"],
     ["Auto", s.trigger ? s.trigger.auto_trigger_ms + " ms" : "—"],
-    ["Svep", s.sweep && s.sweep.running ? s.sweep.mode : "stoppat"],
+    ["Sweep", s.sweep && s.sweep.running ? s.sweep.mode : "stopped"],
   ]);
 
   // The server's settings win — except mid-drag, when the finger leads.
@@ -619,7 +619,7 @@ async function poll() {
         `<li class="${a.status === 'fel' ? 'err' : ''}">` +
         `<span class="t">${a.time}</span><span class="n">${a.tool}</span>` +
         `<span class="t">${a.status}</span></li>`).join("")
-    : '<li class="empty">väntar på anrop…</li>';
+    : '<li class="empty">waiting for calls…</li>';
 
   if (s.latest) {
     latest = s.latest;
@@ -628,7 +628,7 @@ async function poll() {
     const perDiv = m.duration_s / GRID_X;
     document.getElementById("divs").textContent =
       `${(m.range_v / (GRID_Y / 2)).toPrecision(3)} V/div · ` +
-      `${(perDiv * 1e3).toPrecision(3)} ms/div · ${m.samples} sampel · ` +
+      `${(perDiv * 1e3).toPrecision(3)} ms/div · ${m.samples} samples · ` +
       `${s.latest.capture_id}`;
     if (Date.now() > flashUntil) {
       document.getElementById("capnote").textContent = m.note || "";

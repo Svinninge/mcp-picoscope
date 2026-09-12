@@ -129,7 +129,7 @@ The page also has an **Autoset** button that runs exactly the same code as the
 MCP tool, under the same lock — the result appears in the activity log, so you
 and Claude can each see what the other did. Beyond that the page only reads; it
 cannot set the channel, and nothing that drives the outside world will ever be
-added to it. A simulated signal is flagged with an orange **SIMULERAD** badge so
+added to it. A simulated signal is flagged with an orange **SIMULATED** badge so
 a mock cannot be mistaken for a measurement.
 
 **One window, for the whole machine.** There is a single PS2104 on the bench, so

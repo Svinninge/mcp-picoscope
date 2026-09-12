@@ -344,3 +344,45 @@ def test_a_level_dragged_with_a_mouse_is_not_stored_to_16_digits():
     session = sweep_session()
     applied = control.set_trigger(session, "edge", 1.7111404667547336, "rising")
     assert applied["threshold_v"] == 1.7111
+
+
+def test_a_window_too_short_to_see_the_signal_widens_itself():
+    """The sweep could trap itself: seen live, stuck at 20 us with 800 Hz present.
+
+    Too short a window holds fewer than two edges, so no frequency is measured,
+    so the retune that would widen it never fires. Widening after a few empty
+    sweeps is what breaks the cycle.
+    """
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    try:
+        control.start_sweep(session, "auto", window_s=control.SWEEP_MIN_WINDOW_S)
+        assert control.sweep_status()["window_s"] == control.SWEEP_MIN_WINDOW_S
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            status = control.sweep_status()
+            if status["window_s"] > control.SWEEP_MIN_WINDOW_S * 4:
+                break
+            time.sleep(0.05)
+        widened = control.sweep_status()["window_s"]
+        assert widened > control.SWEEP_MIN_WINDOW_S, "the sweep stayed stuck"
+    finally:
+        control.stop_sweep(session)
+
+
+def test_autoset_hands_its_window_to_a_running_sweep():
+    """Otherwise autoset is invisible: the sweep overwrites it 150 ms later."""
+    from mcp_picoscope import control
+    from mcp_picoscope.backends.mock import MockSignal
+
+    session = sweep_session(MockSignal("sine", 50.0, 1.0))
+    try:
+        control.start_sweep(session, "auto", window_s=control.SWEEP_MIN_WINDOW_S)
+        result = control.autoset(session)
+        chosen = result["measurements"]["duration_s"]
+        # The sweep now asks for what autoset chose, not its own stale window.
+        assert control.sweep_status()["window_s"] > control.SWEEP_MIN_WINDOW_S
+        assert chosen > control.SWEEP_MIN_WINDOW_S
+    finally:
+        control.stop_sweep(session)

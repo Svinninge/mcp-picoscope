@@ -195,7 +195,7 @@ the original plan)*
 - Draws the trace on a graticule with V/div and ms/div, plus readouts, channel
   and trigger settings, a version banner and a log of MCP calls. Refreshes every
   400 ms.
-- Simulated captures are marked **SIMULERAD** in orange, so a mock can never be
+- Simulated captures are marked **SIMULATED** in orange, so a mock can never be
   mistaken for a measurement.
 - `PICOSCOPE_UI=0` turns it off (the tests set it), `PICOSCOPE_UI_PORT` moves it.
 - **One window per machine**, not per process: the proof that a window is

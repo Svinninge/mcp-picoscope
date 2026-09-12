@@ -54,12 +54,12 @@ def collect(seconds: float) -> tuple[list[float], dict]:
 
 def describe(label: str, starts: list[float], vpp: float) -> float:
     if len(starts) < 2:
-        print(f"{label:22s} för få fångster ({len(starts)})")
+        print(f"{label:22s} too few captures ({len(starts)})")
         return float("nan")
     spread = statistics.pstdev(starts)
     print(
-        f"{label:22s} {len(starts):2d} fångster   start {statistics.mean(starts):+.3f} V "
-        f"±{spread:.3f} V   = {spread / vpp * 100:5.1f} % av Vpp   "
+        f"{label:22s} {len(starts):2d} captures   start {statistics.mean(starts):+.3f} V "
+        f"±{spread:.3f} V   = {spread / vpp * 100:5.1f} % of Vpp   "
         f"min {min(starts):+.3f} max {max(starts):+.3f}"
     )
     return spread
@@ -68,11 +68,11 @@ def describe(label: str, starts: list[float], vpp: float) -> float:
 def main() -> int:
     state = get("/state")
     if not state.get("open"):
-        print("ingen enhet öppen i displayen")
+        print("no device open in the display")
         return 1
     latest = state.get("latest")
     if not latest:
-        print("displayen har ingen fångst än")
+        print("the display has no capture yet")
         return 1
 
     stats = latest["measurements"]
@@ -80,33 +80,33 @@ def main() -> int:
     mid = round((stats["vmin_v"] + stats["vmax_v"]) / 2, 4)
     print(
         f"signal: {stats['frequency_hz']} Hz, {stats['vmin_v']:+.3f}..{stats['vmax_v']:+.3f} V, "
-        f"mitt {mid:+.3f} V\n"
+        f"midpoint {mid:+.3f} V\n"
     )
 
     post("/control?" + urllib.parse.urlencode({"action": "sweep", "mode": "auto"}))
     post("/control?" + urllib.parse.urlencode(
         {"action": "trigger", "level_v": mid, "direction": "rising", "mode": "auto"}
     ))
-    free = describe("fritt löpande", *collect(SECONDS)[:1], vpp)
+    free = describe("free running", *collect(SECONDS)[:1], vpp)
 
     post("/control?" + urllib.parse.urlencode(
         {"action": "trigger", "level_v": mid, "direction": "rising", "mode": "edge"}
     ))
     post("/control?" + urllib.parse.urlencode({"action": "sweep", "mode": "normal"}))
     starts, state = collect(SECONDS)
-    triggered = describe("edge, stigande", starts, vpp)
+    triggered = describe("edge, rising", starts, vpp)
     if state.get("sweep", {}).get("error"):
-        print("   svep säger:", state["sweep"]["error"][:90])
+        print("   the sweep says:", state["sweep"]["error"][:90])
 
     post("/control?" + urllib.parse.urlencode(
         {"action": "trigger", "level_v": mid, "direction": "falling", "mode": "edge"}
     ))
     falling, _ = collect(SECONDS)
-    describe("edge, fallande", falling, vpp)
+    describe("edge, falling", falling, vpp)
 
     print()
     if triggered == triggered and free == free:  # not NaN
-        print(f"stabilisering: {free / triggered:.0f}× mindre spridning med trigg")
+        print(f"steadiness: {free / triggered:.0f}x less spread with the trigger")
     post("/control?" + urllib.parse.urlencode({"action": "sweep", "mode": "auto"}))
     return 0
 

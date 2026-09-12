@@ -80,6 +80,12 @@ SWEEP_START_WINDOW_S = 0.02
 # Only retune when the window is off by more than this, or the timebase twitches
 # on every capture as the last digit of the measured frequency wobbles.
 SWEEP_RETUNE_RATIO = 1.5
+# A window can trap itself: too short to hold two edges means no frequency,
+# and no frequency means nothing ever widens it again. Seen live, stuck at the
+# 20 us minimum while an 800 Hz signal sat on the probe — 0.066 of a period per
+# capture. After this many sweeps without a frequency, widen and try again.
+SWEEP_MISSES_BEFORE_WIDENING = 3
+SWEEP_WIDEN_FACTOR = 8.0
 # What an edge trigger's rescue is set to when leaving NORMAL for AUTO.
 NORMAL_RESCUE_MS = 1000
 
@@ -142,6 +148,11 @@ def autoset(session: ScopeSession) -> dict:
         )
         session.channel = applied
         steps.append(f"picked ±{applied.range_v} V ({AUTOSET_HEADROOM:g}× headroom)")
+
+        # A running sweep keeps its own window, so autoset has to hand its
+        # choice over or the next sweep undoes it a tenth of a second later.
+        if _runner is not None and _runner.session is session:
+            _runner.set_window(duration)
 
         capture = backend.capture_block(duration, AUTOSET_SURVEY_SAMPLES)
         capture.capture_id = session.next_capture_id()
@@ -249,6 +260,7 @@ class SweepRunner:
         self._window_s = SWEEP_START_WINDOW_S
         self._error = ""
         self._sweeps = 0
+        self._misses = 0
         self._guard = threading.Lock()  # guards the fields above, not the device
 
     # -- control -----------------------------------------------------------
@@ -321,6 +333,17 @@ class SweepRunner:
             self._mode = "stop"
         return self.status()
 
+    def set_window(self, seconds: float) -> None:
+        """Adopt a window chosen elsewhere — autoset, or a future time/div.
+
+        Without this, autoset is invisible while a sweep is running: it picks a
+        range and a timebase, and the sweep overwrites the timebase with its own
+        within 150 ms. Whoever owns the timebase has to be one thing.
+        """
+        with self._guard:
+            self._window_s = _clamp_window(seconds)
+            self._misses = 0
+
     def status(self) -> dict:
         thread = self._thread
         with self._guard:
@@ -376,16 +399,37 @@ class SweepRunner:
             return measure(capture)
 
     def _retune(self, stats: dict) -> None:
-        """Follow the signal, so a faster one does not draw as a green block."""
+        """Follow the signal, and climb back out when the window is too short."""
         freq = stats.get("frequency_hz")
         if not freq:
+            self._widen_after_misses()
             return
         wanted = _clamp_window(SWEEP_PERIODS_ON_SCREEN / freq)
         with self._guard:
+            self._misses = 0
             current = self._window_s
             if max(wanted / current, current / wanted) > SWEEP_RETUNE_RATIO:
                 self._window_s = wanted
                 log.info("sweep follows %.6g Hz → %.4g ms window", freq, wanted * 1e3)
+
+    def _widen_after_misses(self) -> None:
+        """Widen the window when nothing periodic has been seen for a while.
+
+        Without this the sweep can trap itself: a window too short to hold two
+        edges reports no frequency, and no frequency means the window is never
+        retuned — so it stays too short forever. Widening is safe: a window too
+        long only draws more periods, while one too short shows nothing at all.
+        """
+        with self._guard:
+            self._misses += 1
+            if self._misses < SWEEP_MISSES_BEFORE_WIDENING:
+                return
+            self._misses = 0
+            widened = _clamp_window(self._window_s * SWEEP_WIDEN_FACTOR)
+            if widened == self._window_s:
+                return  # already at the widest; nothing periodic is there
+            self._window_s = widened
+            log.info("sweep saw nothing periodic → widening to %.4g ms", widened * 1e3)
 
 
 def _clamp_window(seconds: float) -> float:

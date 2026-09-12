@@ -53,7 +53,7 @@ async def run() -> None:
             print("autoset:", "; ".join(auto["steps"]), flush=True)
 
             sweep = payload(await session.call_tool("start_sweep", {"mode": "auto"}))
-            print("svep:", sweep["mode"], "igång" if sweep["running"] else "STARTADE INTE",
+            print("sweep:", sweep["mode"], "running" if sweep["running"] else "DID NOT START",
                   flush=True)
 
             loop = asyncio.get_event_loop()
@@ -63,7 +63,7 @@ async def run() -> None:
                 status = payload(await session.call_tool("get_server_info", {}))
                 del status  # keeps the MCP session warm; the sweep needs no help
 
-            print("stoppar svepet", flush=True)
+            print("stopping the sweep", flush=True)
             payload(await session.call_tool("stop_sweep", {}))
             payload(await session.call_tool("close_device", {}))
 
