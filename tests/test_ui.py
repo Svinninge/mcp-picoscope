@@ -386,3 +386,19 @@ def test_autoset_hands_its_window_to_a_running_sweep():
         assert chosen > control.SWEEP_MIN_WINDOW_S
     finally:
         control.stop_sweep(session)
+
+
+def test_the_sweep_leaves_a_chosen_window_alone_while_the_signal_holds():
+    """Autoset picks five periods; the sweep preferring ten must not overrule it."""
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    try:
+        control.start_sweep(session, "auto")
+        chosen = control.autoset(session)["measurements"]["duration_s"]
+        window = control.sweep_status()["window_s"]
+        time.sleep(1.0)  # several sweeps
+        assert control.sweep_status()["window_s"] == window, "the sweep overrode autoset"
+        assert chosen > 0
+    finally:
+        control.stop_sweep(session)

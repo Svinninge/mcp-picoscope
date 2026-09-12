@@ -103,6 +103,10 @@ def autoset(session: ScopeSession) -> dict:
         ranges = sorted(session.device.voltage_ranges_v)  # type: ignore[union-attr]
         steps: list[str] = []
 
+        # The survey must be free-running: an armed trigger that does not fire
+        # would time out on a signal autoset has not found yet. The user's
+        # setting is put back at the end, with the level moved to the signal.
+        incoming = session.trigger
         backend.set_channel(ChannelConfig(ranges[-1], session.channel.coupling, True))
         backend.set_trigger(TriggerConfig(mode="auto"))
 
@@ -152,13 +156,31 @@ def autoset(session: ScopeSession) -> dict:
         # A running sweep keeps its own window, so autoset has to hand its
         # choice over or the next sweep undoes it a tenth of a second later.
         if _runner is not None and _runner.session is session:
-            _runner.set_window(duration)
+            _runner.set_window(duration, for_hz=frequency)
 
         capture = backend.capture_block(duration, AUTOSET_SURVEY_SAMPLES)
         capture.capture_id = session.next_capture_id()
         session.store(capture)
+
+        # Half of peak-to-peak: where a signal spends least time and its slope
+        # is steepest, which is where a trigger is steadiest. Zero is the wrong
+        # default for anything with an offset — a 0..3 V signal would never
+        # cross it. The mode the user had is restored around it.
+        stats = measure(capture)
+        level = round_sig((stats["vmin_v"] + stats["vmax_v"]) / 2, 5)
+        applied_trigger = set_trigger(
+            session,
+            mode=incoming.mode,
+            threshold_v=level,
+            direction=incoming.direction,
+            delay_pct=incoming.delay_pct,
+            auto_trigger_ms=incoming.auto_trigger_ms,
+        )
+        steps.append(f"trigger level {level:.4g} V (half of peak-to-peak)")
+
         log.info("autoset: %s", "; ".join(steps))
         return {
+            "trigger": applied_trigger,
             "capture_id": capture.capture_id,
             "steps": steps,
             "range_v": applied.range_v,
@@ -261,6 +283,11 @@ class SweepRunner:
         self._error = ""
         self._sweeps = 0
         self._misses = 0
+        # The frequency the current window was chosen for. Retuning compares
+        # frequencies, not window lengths: comparing lengths cannot tell "the
+        # signal changed" from "somebody deliberately picked a different number
+        # of periods", so autoset's choice was overwritten 150 ms later.
+        self._tuned_for_hz: float | None = None
         self._guard = threading.Lock()  # guards the fields above, not the device
 
     # -- control -----------------------------------------------------------
@@ -333,15 +360,18 @@ class SweepRunner:
             self._mode = "stop"
         return self.status()
 
-    def set_window(self, seconds: float) -> None:
+    def set_window(self, seconds: float, for_hz: float | None = None) -> None:
         """Adopt a window chosen elsewhere — autoset, or a future time/div.
 
         Without this, autoset is invisible while a sweep is running: it picks a
         range and a timebase, and the sweep overwrites the timebase with its own
-        within 150 ms. Whoever owns the timebase has to be one thing.
+        within 150 ms. Whoever owns the timebase has to be one thing. Passing
+        the frequency it was chosen for keeps the choice until the signal itself
+        changes.
         """
         with self._guard:
             self._window_s = _clamp_window(seconds)
+            self._tuned_for_hz = for_hz
             self._misses = 0
 
     def status(self) -> dict:
@@ -404,12 +434,15 @@ class SweepRunner:
         if not freq:
             self._widen_after_misses()
             return
-        wanted = _clamp_window(SWEEP_PERIODS_ON_SCREEN / freq)
         with self._guard:
             self._misses = 0
-            current = self._window_s
-            if max(wanted / current, current / wanted) > SWEEP_RETUNE_RATIO:
+            reference = self._tuned_for_hz
+            if reference and max(freq / reference, reference / freq) <= SWEEP_RETUNE_RATIO:
+                return  # same signal; leave the window as somebody chose it
+            wanted = _clamp_window(SWEEP_PERIODS_ON_SCREEN / freq)
+            if reference is None or wanted != self._window_s:
                 self._window_s = wanted
+                self._tuned_for_hz = freq
                 log.info("sweep follows %.6g Hz → %.4g ms window", freq, wanted * 1e3)
 
     def _widen_after_misses(self) -> None:
