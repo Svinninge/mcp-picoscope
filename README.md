@@ -6,8 +6,9 @@ USB-oscilloskop.
 > **Status: v1 klar och verifierad mot riktig PS2104** (2026-09-12). Hela kedjan
 > öppna → konfigurera → fånga → mäta → exportera fungerar mot hårdvaran. Skalan
 > är mätt mot en 1,5 V-cell, nollan mot kortsluten ingång och frekvensen mot en
-> 800 Hz-sinus med 0,03 % fel. Kvar: flanktriggen mot hårdvara, och den
-> interaktiva triggen i displayen (issue #1).
+> 800 Hz-sinus med 0,03 % fel. Även flanktriggen är verifierad: startpunktens
+> spridning faller från 31 % av Vpp till 0,7 % när den slås på. Kvar: den
+> interaktiva kontrollytan i displayen (issue #1) och streaming (v2).
 
 ## Tanken
 

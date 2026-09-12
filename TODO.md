@@ -10,9 +10,6 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Hårdvara — kvar att verifiera
 
-- 🟡 **Triggvägen är oprövad mot hårdvara.** `configure_trigger(mode="edge")`
-  och timeout-grenen i `_wait_ready` är körd som logik, aldrig mot en enhet som
-  faktiskt väntar på en flank. Kräver också en signal.
 - 🟢 **Buffertdjupet är 8092 sampel**, inte 32768. `capture_block` klampar redan,
   men en begäran om fler sampel svarar tyst med färre — den borde säga det.
 
@@ -61,6 +58,12 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Flanktriggen verifierad mot hårdvara.** Sista oprövade
+  hårdvaruvägen. Mätt på 800 Hz-sinusen som spridning i startpunkten över 12
+  fångster: fritt löpande ±0,962 V (31,4 % av Vpp, 6/12 stigande), stigande
+  flank ±0,020 V (0,7 %, 12/12 stigande), fallande flank ±0,000 V (0/12
+  stigande). Båda felvägarna också: timeout med läsbart besked vid omöjlig nivå,
+  och `auto_trigger_ms` som räddning. `tools/verify_trigger.py`.
 - **2026-09-12 — Autoset ser hela frekvensområdet, och displayen följer
   signalen.** Per: "kan inte visa 11.8 kHz upplöst". Mätningen var rätt (11,800
   kHz), men autosets survey låg på 41 kS/s — 3,5 sampel per period — och svarade

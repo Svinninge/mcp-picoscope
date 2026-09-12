@@ -1,10 +1,15 @@
-# File version: v0.03
+# File version: v0.04
 """Real hardware backend for the PicoScope 2104 via the legacy ps2000 driver.
 
 STATUS: verified against the real device 2026-09-12 (PLAN.md step 0). The unit
-reports variant "2104", serial <serial>, hardware 4, driver 3.0.152.6217, and
-the volt scale is measured against a 1.5 V cell. Still unverified: the edge
-trigger path, which needs a periodic source.
+reports variant "2104", serial <serial>, hardware 4, driver 3.0.152.6217; the
+volt scale is measured against a 1.5 V cell, the zero against a shorted input,
+the frequency against an 800 Hz sine, and the edge trigger by the spread of the
+starting point: free-running captures start anywhere (31 % of Vpp), edge-
+triggered ones within 0.7 %, and the direction decides the slope 12 times out
+of 12. Both failure paths too: a threshold the signal never reaches times out
+with a readable message, or is rescued by auto_trigger_ms. Nothing here is
+assumed any more — tools/verify_trigger.py repeats the measurement.
 
 PS2104 belongs to the OLD 2000 series and speaks ps2000.dll. The ps2000a family
 answers "unit not found" on this device, and that failure is indistinguishable

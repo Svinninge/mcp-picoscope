@@ -7,8 +7,8 @@ Status: **v1 klar och verifierad mot hårdvara** (2026-09-12). Steg 0–6 är
 genomförda, och definition of done §7 är uppfylld: enheten identifierar sig som
 variant 2104 (serienr <serial>), voltskalan är mätt mot en 1,5 V-cell, nollan
 mot kortsluten ingång, och frekvensen mot en 800 Hz-sinus med 0,03 % fel. Kvar
-är utvidgningar, inte grunden: flanktriggen mot hårdvara, streaming (v2) och
-den interaktiva triggen i displayen
+är utvidgningar, inte grunden: streaming (v2) och den interaktiva kontrollytan
+i displayen
 ([issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1)). Se
 [TODO.md](TODO.md).
 
@@ -152,7 +152,7 @@ läsbar resurs.
   inte via FFT-topp — robustare för fyrkant och låga frekvenser.
 - Enhetstester som mäter mockens kända signaler och jämför mot facit.
 
-**Steg 3 — Riktig ps2000-backend** ✅ 2026-09-12 (trigg-grenen kvar att prova)
+**Steg 3 — Riktig ps2000-backend** ✅ 2026-09-12 (inklusive flanktriggen)
 - `open_unit`, `set_channel`, `set_trigger`, `get_timebase`, `run_block`,
   `ready`-polling, `get_values`.
 - ADC-räknare → volt via `max_adc`-skalning per spänningsområde.
