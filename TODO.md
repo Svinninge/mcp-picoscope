@@ -21,14 +21,27 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ## Nästa
 
+- 🟡 **Interaktiv trigg i displayen** *(Per 2026-09-12)*. Klicka och dra
+  triggnivån i kurvfönstret, single-svep, kontinuerlig omtriggning.
+  **Observera att detta bryter en bärande princip:** displayen läser idag och
+  styr aldrig (PLAN.md §3 punkt 5, SOUL.md). Att låta sidan ställa trigg gör den
+  till en kontrollyta, och då behövs svar på tre frågor innan kod skrivs:
+  1. **Vem äger enheten?** Sidan och LLM:en kan ställa trigg samtidigt. Sidans
+     kommandon måste gå genom samma `ScopeSession`-lås som verktygen, och
+     resultatet måste synas i `picoscope://state` så att LLM:en inte resonerar
+     om ett läge som någon annan just ändrat.
+  2. **Vad får sidan göra?** Trigg och svepläge är ofarligt (scopet är en passiv
+     lyssnare), men gränsen måste skrivas ned: aldrig något som matar ut signal,
+     aldrig något som öppnar/stänger enheten under en pågående mätning.
+  3. **Vem driver insamlingen?** Kontinuerlig omtriggning betyder att servern
+     fångar av sig själv i en loop, inte bara när ett verktyg anropas — en ny
+     tråd som måste gå att stoppa och som inte får svälta MCP-anropen på låset.
+  Planfil krävs enligt SOUL.md (arkitekturpåverkan). Skissa: `POST /control` med
+  `{trigger_level_v, mode: single|auto|normal, run: bool}`, en fångstloop i
+  `ScopeSession`, drag-hantering på canvas med nivålinje och triggmarkör.
 
-- 🔴 **Brus rapporteras som en frekvens.** Sett live 2026-09-12: med okopplad
-  sond valde `autoset` ±0,5 V, och 30 mV brus blev "456 Hz" — över
-  `MIN_SWING_FRAC` (2 % av området), alltså släpptes det igenom som en signal.
-  Amplitudtröskeln ensam räcker inte; **periodiciteten** måste också vägas in.
-  `period_jitter_pct` räknas redan ut — brus ger tiotals procent jitter, en
-  riktig signal någon tiondel. Vägra rapportera frekvens över en jittergräns.
-  Ett instrument som hittar på en siffra är värre än ett som säger "vet ej".
+
+
 
 - 🟢 **`hardware_present()` läser "upptagen" som "saknas".** Hårdvarutestet
   hoppas över när enheten redan är öppen av en annan session — sant men
@@ -73,6 +86,13 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Brus rapporteras inte längre som en frekvens.** Uppmätt
+  gräns i stället för gissad: riktiga vågformer (sinus, fyrkant, ramp, triangel,
+  även sinus under 10 % brus) ligger på 0,06–0,71 % periodjitter; rent brus på
+  58–73 % i mocken och 66–200 % på en okopplad PS2104-sond. Gränsen sattes till
+  20 %, mitt i det tomma glappet. Fåcykelfallet — två flanker ger ett intervall
+  och därmed 0 % jitter per definition, vilket gav "3756 Hz" på brus — fångas av
+  formmåttet Vpp/stdev (2,0 fyrkant, 2,8 sinus, 3,5 ramp, 5–7 brus).
 - **2026-09-12 — Fönstret överlever inte längre sin server.** Sju fönster hade
   hunnit samlas: varje testsession öppnade ett, och processen som dog lämnade
   det kvar med en frusen mätning. Displayen kör nu i en egen Edge-profil och

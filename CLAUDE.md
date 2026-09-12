@@ -143,6 +143,15 @@ Genomgångarna klarar båda och ger duty cycle på köpet. Nivån är **mittpunk
 mellan min och max**, inte medelvärdet: en 20 %-fyrkant har ett medelvärde långt
 från sin egen mittpunkt, och mätt mot det blir varje sådan våg ~50 %.
 
+**Brus är inte en frekvens.** Amplitudtröskeln (`MIN_SWING_FRAC`, 2 % av
+området) räcker inte — på ett smalt område klarar brus den lätt, och en okopplad
+sond rapporterades en gång som "456 Hz". Periodiciteten avgör:
+`MAX_JITTER_PCT = 20` mot uppmätta 0,06–0,71 % för riktiga vågformer och
+58–200 % för brus. Med färre än tre perioder finns inga intervall att jämföra
+(två flanker ger 0 % jitter per definition), och då används formmåttet
+Vpp/stdev i stället. Trösklarna är **uppmätta**, och siffrorna står i
+`analysis.py` — ändra dem inte utan att mäta om.
+
 **Nedsampling är min/max per hink.** Var N:te sampel tappar spikarna, vilket är
 precis det man köpte ett oscilloskop för att se. `test_downsample_keeps_the_spike`
 fäller bygget om någon förenklar det.

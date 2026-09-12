@@ -1,4 +1,4 @@
-# File version: v0.01
+# File version: v0.02
 """Measurements against the mock's known answers.
 
 The mock is the ground truth here: it knows the frequency, amplitude and duty
@@ -11,9 +11,16 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from mcp_picoscope import analysis
 from mcp_picoscope.analysis import downsample_minmax, measure
 from mcp_picoscope.backends.mock import MockBackend, MockSignal
-from mcp_picoscope.scope import ChannelConfig, ScopeError, TriggerConfig, pick_range
+from mcp_picoscope.scope import (
+    Capture,
+    ChannelConfig,
+    ScopeError,
+    TriggerConfig,
+    pick_range,
+)
 
 
 def capture(signal: MockSignal, *, range_v: float = 5.0, duration_s: float = 0.01,
@@ -134,3 +141,55 @@ def test_pick_range_refuses_to_clamp_silently():
     with pytest.raises(ScopeError, match="exceeds the largest range"):
         pick_range(50.0, (1.0, 2.0, 5.0))
     assert pick_range(1.5, (1.0, 2.0, 5.0)) == 2.0
+
+
+# -- noise must never be reported as a frequency --------------------------
+# An unconnected probe on ±0.5 V once came back as "456 Hz". Amplitude alone
+# cannot tell a signal from noise on a narrow range; periodicity can.
+
+
+def test_noise_reports_no_frequency_however_loud():
+    for noise in (0.02, 0.05, 0.2):
+        cap = capture(MockSignal("noise", noise_v=noise), range_v=0.5)
+        stats = measure(cap)
+        assert stats["frequency_hz"] is None, f"noise {noise} V became a frequency"
+        assert "not periodic" in stats["note"] or "noise" in stats["note"]
+
+
+def test_a_signal_buried_in_noise_is_refused_not_guessed():
+    """30 % noise on a 1 kHz sine measured 3368 Hz before this; now it says no."""
+    cap = capture(MockSignal("sine", 1000.0, 1.0, noise_v=0.30))
+    stats = measure(cap)
+    assert stats["frequency_hz"] is None
+    assert stats["period_jitter_pct"] > analysis.MAX_JITTER_PCT
+
+
+@pytest.mark.parametrize(
+    "signal",
+    [
+        MockSignal("sine", 1000.0, 1.0, noise_v=0.10),
+        MockSignal("square", 1000.0, 1.0, noise_v=0.01, duty_cycle_pct=30.0),
+        MockSignal("ramp", 500.0, 1.0, noise_v=0.01),
+        MockSignal("triangle", 2000.0, 1.0, noise_v=0.01),
+    ],
+)
+def test_real_waveforms_keep_their_frequency(signal):
+    """The noise gate must not cost us the signals it exists to protect."""
+    stats = measure(capture(signal, duration_s=0.02, samples=16384))
+    assert stats["frequency_hz"] == pytest.approx(signal.frequency_hz, rel=0.01)
+    assert stats["period_jitter_pct"] < analysis.MAX_JITTER_PCT
+
+
+def test_two_edges_of_noise_do_not_become_a_frequency():
+    """One interval has zero jitter by definition — the shape test catches it."""
+    rng = np.random.default_rng(3)
+    volts = np.round(rng.normal(0, 1.2, 600)) / 32767 * 0.2
+    cap = Capture("c", volts, 1 / 195312.5, 0.2, "DC", TriggerConfig(), False, 0.003, 600)
+    stats = measure(cap)
+    assert stats["frequency_hz"] is None
+
+
+def test_a_slow_signal_with_few_cycles_is_still_measured():
+    """Three periods is thin, but it is a signal and must not be thrown away."""
+    stats = measure(capture(MockSignal("sine", 50.0, 1.0, noise_v=0.01), duration_s=0.06))
+    assert stats["frequency_hz"] == pytest.approx(50.0, rel=0.01)

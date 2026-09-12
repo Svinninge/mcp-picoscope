@@ -1,4 +1,4 @@
-# File version: v0.02
+# File version: v0.03
 """Waveform measurements: amplitude statistics, frequency, duty cycle.
 
 Frequency comes from hysteresis mid-level crossings, not an FFT peak. A square
@@ -21,6 +21,28 @@ from .scope import Capture
 # a flat line with noise on it.
 HYSTERESIS_FRAC = 0.25
 MIN_SWING_FRAC = 0.02
+
+# Amplitude alone cannot tell a signal from noise: on a narrow range, noise
+# clears MIN_SWING_FRAC easily — an unconnected probe on ±0.5 V once came back
+# as "456 Hz". Periodicity is what separates them, and the gap is wide.
+# Measured 2026-09-12, period jitter (std/mean of the intervals between rising
+# edges): clean sine, square, ramp and triangle 0.06-0.34 %; a sine under 10 %
+# noise 0.71 %; pure noise from the mock 58-73 %; an unconnected PS2104 probe
+# 82-105 %. Twenty per cent sits in the empty middle, closer to the noise.
+MAX_JITTER_PCT = 20.0
+# Jitter needs intervals to compare. Two rising edges give one interval and a
+# standard deviation of zero, which would read as a perfectly steady signal —
+# and an unconnected probe did exactly that, reporting 3756 Hz at 0 % jitter.
+MIN_CYCLES_FOR_JITTER = 3
+
+# Fallback for those few-cycle records: the shape of the amplitude
+# distribution. Vpp/stdev is 2.0 for a square, 2.83 for a sine, 3.5 for a ramp
+# or triangle, and 5-7 for noise, whose extremes over thousands of samples
+# reach far past one standard deviation (measured 2026-09-12, same survey).
+# A narrow pulse train also scores high, so this is used ONLY when there are
+# too few cycles to judge periodicity properly — capture longer and jitter,
+# which handles pulse trains correctly, takes over.
+MAX_NOISE_CREST = 4.5
 
 # Samples this close to the full-scale rail are treated as clipped.
 OVERRANGE_FRAC = 0.995
@@ -161,10 +183,24 @@ def measure(capture: Capture) -> dict:
 
     periods = np.diff(rising)
     period = float(periods.mean())
+    jitter = float(100.0 * periods.std() / period)
+    result["cycles_in_record"] = int(periods.size)
+    result["period_jitter_pct"] = jitter
+
+    if periods.size >= MIN_CYCLES_FOR_JITTER and jitter > MAX_JITTER_PCT:
+        # The edges are there but they are not periodic. Reporting their mean
+        # as a frequency would invent a number: an instrument that makes one up
+        # is worse than one that says it does not know.
+        result["note"] = (
+            f"Edges are not periodic — {jitter:.0f} % variation between them, "
+            f"against {MAX_JITTER_PCT:.0f} % allowed. This is noise, not a "
+            f"signal. Vpp is only {result['vpp_v']:.4g} V on a "
+            f"{capture.range_v} V range."
+        )
+        return _rounded(result)
+
     result["period_s"] = period
     result["frequency_hz"] = 1.0 / period
-    result["cycles_in_record"] = int(periods.size)
-    result["period_jitter_pct"] = float(100.0 * periods.std() / period)
 
     # Duty cycle: high time from each rising edge to the next falling edge.
     highs = [
@@ -172,6 +208,26 @@ def measure(capture: Capture) -> dict:
     ]
     if highs:
         result["duty_cycle_pct"] = float(100.0 * np.mean(highs) / period)
+
+    if periods.size < MIN_CYCLES_FOR_JITTER:
+        crest = result["vpp_v"] / result["stdev_v"] if result["stdev_v"] else 0.0
+        if crest > MAX_NOISE_CREST:
+            result["period_s"] = None
+            result["frequency_hz"] = None
+            result["duty_cycle_pct"] = None
+            result["note"] = (
+                f"Too few periods ({periods.size}) to check that the signal "
+                f"repeats, and its shape says noise: Vpp is {crest:.1f}x the "
+                f"standard deviation, where a real waveform is 2-3.5x. No "
+                "frequency reported. Capture a longer duration_s if there is a "
+                "slow signal here."
+            )
+        else:
+            result["note"] = (
+                f"Only {periods.size} period(s) in the record, too few to check "
+                "that the signal is periodic — the frequency could be noise. "
+                "Capture a longer duration_s to confirm it."
+            )
 
     if capture.overrange:
         result["note"] = (
