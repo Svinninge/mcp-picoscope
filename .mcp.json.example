@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to .mcp.json and replace <checkout> with the path to your clone. CAPTURE_DIR is optional; it defaults to ./captures relative to cwd.",
+  "mcpServers": {
+    "picoscope": {
+      "command": "<checkout>\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "mcp_picoscope.server"],
+      "cwd": "<checkout>",
+      "env": {
+        "CAPTURE_DIR": "<checkout>\\captures"
+      }
+    }
+  }
+}

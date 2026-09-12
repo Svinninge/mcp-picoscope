@@ -1,139 +1,119 @@
-# TODO — mcp-picoscope
+# Work log — mcp-picoscope
 
-Aktiv backlog. Handhållen i den här repon (till skillnad från ett tidigare projekt, där
-TODO.md genereras ur GitHub Issues). Avklarat flyttas ner under **Klart** med
-datum och en rad om vad som faktiskt gjordes.
+Open work lives in [GitHub Issues](https://github.com/Svinninge/mcp-picoscope/issues).
+This file is the other half: what was actually done, and why — the reasoning that
+a closed issue loses and a commit message only half carries.
 
-Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
-
----
-
-## Hårdvara — kvar att verifiera
-
-- 🟢 **Buffertdjupet är 8092 sampel**, inte 32768. `capture_block` klampar redan,
-  men en begäran om fler sampel svarar tyst med färre — den borde säga det.
-
-## Nästa
-
-- 🟡 **Tid/div i displayen** — kvar av
-  [issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1). Triggen är
-  byggd; tidbasen väljs fortfarande av autoset och svepets frekvensföljning.
-  Ett manuellt reglage måste varna när vald tidbas ger <10 sampel/period, och
-  läget (auto eller manuell) måste synas i `picoscope://state`.
-
-- 🟡 **`capture_streaming(duration_s, rate)`** — finns i PLAN.md §4 men är inte
-  byggd; planens §8 föreslår block i v1 och streaming i v2. Skriv den när
-  blockvägen är verifierad mot hårdvara.
-- 🟢 **`autoset` kollar inte om signalen är för liten för det valda området.**
-  Den väljer minsta område som rymmer topparna, men en signal under ett par
-  procent av området rapporteras bara som "ingen periodisk signal". Den borde
-  säga "signalen är under brusgolvet på detta område".
-- 🟢 **AC-koppling i mocken är medelvärdesavdrag**, inte ett högpassfilter med
-  brytfrekvens. Skillnaden syns på låga frekvenser.
-
-## Öppna frågor (ur PLAN.md §8)
-
-- Stdio räcker i v1 — nätverksexponering först om scopet ska sitta på en annan
-  dator. **Beslutat: stdio.**
-- Exportkatalog: `./captures/`, konfigurerbar via `CAPTURE_DIR`. **Beslutat.**
+Newest first.
 
 ---
 
-## Klart
+## 2026-09-12
 
-- **2026-09-12 — Steg 1–2 och 4–5 byggda mot mock-backend.** Paketstruktur,
-  `ScopeSession` med lås, mock-backend som imiterar timebase-snäppning,
-  8-bitarskvantisering och klippning, `analysis.py` (nollgenomgångar med
-  hysteres, mittpunkt som nivå), `export.py` (CSV/NPZ/PNG), tolv MCP-verktyg
-  och resursen `picoscope://state`. 18 enhetstester mot mockens facit + röktest
-  över riktig stdio-transport, allt grönt. `.mcp.json` för Claude Code.
-- **2026-09-12 — Steg 0 PASSERAD.** PicoScope 7 T&M installerad via winget
-  (bär `ps2000.dll`; separat PicoSDK behövdes inte). Enheten gick från
-  `Status: Error` till `OK` och svarar: variant 2104, serienr <serial>,
-  hårdvara 4, drivrutin 3.0.152.6217, kalibrerad <date>. Uppmätt: områden
-  100 mV–20 V (20/50 mV avvisas), timebase 0–19 = 20 ns–10,49 ms, 8092 sampels
-  buffert.
-- **2026-09-12 — Steg 3 verifierad mot riktig enhet.** `backends/ps2000.py`
-  öppnar, konfigurerar, fångar och exporterar genom MCP-servern.
-  `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
-  `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
-  `_timebase_limits`; rättat.
-- **2026-09-12 — Trigg och svep i displayen** (issue #1, delvis). Svepmotor i
-  `control.py` med egen tråd: `auto`, `normal`, `single`, stoppbar, låset per
-  fångst. Triggnivån dras med musen på canvasen och skickas vid släpp; linjen
-  syns alltid, dämpad när triggen inte är armerad. `normal` armerar en edge-trigg
-  om scopet står fritt löpande — annars var knappen verkningslös i just det läge
-  enheten öppnar i. En trigg som aldrig löser ut rapporteras som tillstånd, inte
-  fel. `tools/ui_session.py` driver inte längre egna fångster; servern äger
-  insamlingen. Kvar av issuen: tid/div.
-- **2026-09-12 — Flanktriggen verifierad mot hårdvara.** Sista oprövade
-  hårdvaruvägen. Mätt på 800 Hz-sinusen som spridning i startpunkten över 12
-  fångster: fritt löpande ±0,962 V (31,4 % av Vpp, 6/12 stigande), stigande
-  flank ±0,020 V (0,7 %, 12/12 stigande), fallande flank ±0,000 V (0/12
-  stigande). Båda felvägarna också: timeout med läsbart besked vid omöjlig nivå,
-  och `auto_trigger_ms` som räddning. `tools/verify_trigger.py`.
-- **2026-09-12 — Autoset ser hela frekvensområdet, och displayen följer
-  signalen.** Per: "kan inte visa 11.8 kHz upplöst". Mätningen var rätt (11,800
-  kHz), men autosets survey låg på 41 kS/s — 3,5 sampel per period — och svarade
-  "ingen periodisk signal". Första rättningen gjorde det värre: en stege från
-  långsam till snabb tidbas gav ett **alias** på 406 Hz som såg stabilt ut.
-  Stegen går nu snabb → långsam och tror bara på en frekvens när samplingstakten
-  är ≥10× den. Mock 50 Hz–1 MHz: alla inom 0,03 %. Hårdvara: 11 807 Hz, 530
-  sampel/period. `tools/ui_session.py` sätter dessutom fönstret efter uppmätt
-  frekvens (~10 perioder) i stället för fasta 20 ms, som ritade 248 perioder som
-  ett grönt block.
-- **2026-09-12 — Autoset-knapp i displayen.** Första åtgärden sidan får göra,
-  och den satte mönstret för issue #1: `control.py` bär implementationen som
-  både MCP-verktyget och sidan anropar, låset tas där, och resultatet landar i
-  sessionen. Vitlistan är `ui.CONTROLS`. `server.py` blev tunnare på köpet.
-- **2026-09-12 — Definition of done: frekvens ±1 % uppfylld.** Funktionsgenerator,
-  sinus 800 Hz, amplitud 3,0 V: uppmätt 799,37–800,20 Hz över fönster från 2 till
-  200 ms, **0,03 %** fel på de längre och 0,09 % spridning. Vpp 3,02 V mot 3,0 V —
-  inom ett ADC-steg (39 mV på ±5 V). `tools/measure_signal.py` gör om mätningen.
-- **2026-09-12 — Brus rapporteras inte längre som en frekvens.** Uppmätt
-  gräns i stället för gissad: riktiga vågformer (sinus, fyrkant, ramp, triangel,
-  även sinus under 10 % brus) ligger på 0,06–0,71 % periodjitter; rent brus på
-  58–73 % i mocken och 66–200 % på en okopplad PS2104-sond. Gränsen sattes till
-  20 %, mitt i det tomma glappet. Fåcykelfallet — två flanker ger ett intervall
-  och därmed 0 % jitter per definition, vilket gav "3756 Hz" på brus — fångas av
-  formmåttet Vpp/stdev (2,0 fyrkant, 2,8 sinus, 3,5 ramp, 5–7 brus).
-- **2026-09-12 — Fönstret överlever inte längre sin server.** Sju fönster hade
-  hunnit samlas: varje testsession öppnade ett, och processen som dog lämnade
-  det kvar med en frusen mätning. Displayen kör nu i en egen Edge-profil och
-  `close_stale_windows()` stänger kvarglömda fönster — vid serveravslut och
-  före varje start. `window.close()` i sidan räcker inte: Chromium vägrar för
-  fönster som skriptet inte öppnat (uppmätt).
-- **2026-09-12 — Ett fönster per maskin, och det minns var det stod.**
-  Två serverprocesser öppnade varsitt fönster trots att det finns ett enda
-  PS2104 — vakten var per process. Beviset att ett fönster tittar skrivs nu till
-  `%TEMP%/mcp-picoscope-ui.json` som alla processer läser (`should_launch()`,
-  testad i `tests/test_ui.py`). Samma fil bär zoom, position och storlek, med
-  fönsterramen uppmätt så att fönstret inte vandrar nedåt för varje start.
-  `PICOSCOPE_UI_BROWSER=0` serverar utan att öppna något.
-- **2026-09-12 — Siffrorna avrundade i allt som lämnar `analysis.py`.**
-  Statistik 6 signifikanta siffror, kurvpunkter 5. Ett svar med hårdvaruformade
-  tal (`adc/32767`) gick från 7 593 till 4 716 tecken — **38 % mindre**, kurvan
-  ensam 40 %. En 8-bitars ADC löser en del på 256; elva siffror var precision
-  instrumentet inte har, betald i anroparens kontextfönster.
-- **2026-09-12 — Displayen skalbar, och ett fönster i stället för flera.**
-  Zoomknappar (40–200 %, sparas i webbläsaren) plus brytpunkter som fäller ihop
-  layouten ned till ~320×260. Fönsterstarten styrs nu av om sidan pollat de
-  senaste 6 sekunderna, inte av en process-flagga — mätt 67 anrop → 1 fönster,
-  och ett stängt fönster kommer tillbaka vid nästa anrop. Två buggar på vägen:
-  UI-servern kunde **kapa** en annan sessions port på Windows
-  (`allow_reuse_address`), och kurvan ritades fel under zoom eftersom
-  `getBoundingClientRect()` och `clientHeight` inte mäter samma sak.
-- **2026-09-12 — Live-display i Edge.** `ui.py` + `ui.html`: lokal server på
-  8071, kurva med rutnät och V/div, mätvärden, kanal/trigg och en logg över
-  MCP-anrop. Öppnas automatiskt i ett Edge-fönster vid första verktygsanropet
-  (en gång per process), `PICOSCOPE_UI=0` stänger av. Verifierad mot en
-  1 kHz-mocksignal: 1,0002 kHz och 50,0 % duty på skärmen.
-- **2026-09-12 — Nollpunkten verifierad.** Kortsluten ingång, alla åtta
-  områden: värsta offset 0,14 LSB, alltså under upplösningen. Brusgolvet på
-  ±0,1 V är 0,99 mV Vpp ≈ 1,3 LSB. Skript: `tools/verify_zero.py`.
-- **2026-09-12 — Voltskalan verifierad.** `MAX_ADC = 32767` mätt mot ett
-  1,5 V alkaliskt AA: ±2/5/10/20 V läste 1,6007 / 1,6120 / 1,5931 / 1,6399 V —
-  överens inom 47 mV, och absolutvärdet inom 7 % av cellens nominella.
-  Skript: `tools/verify_volt_scale.py`.
-- **2026-09-12 — Arbetsregler ärvda från ett tidigare projekt.** SOUL.md, CLAUDE.md,
-  LESSONS.md och TODO.md anpassade för ett hårdvarunära MCP-projekt.
+**Trigger and sweep in the display** (issue #1, partly). A sweep engine in
+`control.py` with its own thread: `auto`, `normal`, `single`, stoppable, the lock
+taken per capture. The trigger level is dragged with the mouse on the canvas and
+sent on release; the line is always drawn, dimmed when the trigger is not armed.
+`normal` arms an edge trigger when the scope is free-running — without that the
+button did nothing in exactly the state the device opens in. A trigger that never
+fires is reported as a state, not a fault. `tools/ui_session.py` no longer drives
+captures of its own; the server owns the acquisition. Remaining from the issue:
+time/div.
+
+**Autoset sees the whole frequency range, and the display follows the signal.**
+Reported as "cannot show 11.8 kHz resolved". The measurement was right (11.800
+kHz), but autoset's survey ran at 41 kS/s — 3.5 samples per period — and answered
+"no periodic signal". The first fix made it worse: a ladder running slow to fast
+found an **alias** at 406 Hz that looked perfectly stable. The ladder now runs
+fast → slow and believes a frequency only when the sample rate is ≥10× it. Mock,
+50 Hz–1 MHz: every decade within 0.03 %. Hardware: 11 807 Hz, 530 samples per
+period. The capture window now follows the measured frequency (~10 periods)
+instead of a fixed 20 ms, which drew 248 periods as a solid green block.
+
+**The edge trigger verified against hardware.** The last unproven hardware path.
+Measured on the 800 Hz sine as the spread of the starting point over 12 captures:
+free-running ±0.962 V (31.4 % of Vpp, 6/12 rising), rising edge ±0.020 V (0.7 %,
+12/12 rising), falling edge ±0.000 V (0/12 rising). Both failure paths too: a
+timeout with a readable message at an impossible level, and `auto_trigger_ms` as
+the rescue. `tools/verify_trigger.py`.
+
+**An Autoset button in the display.** The first action the page was allowed to
+perform, and it set the pattern for issue #1: `control.py` carries the
+implementation that both the MCP tool and the page call, the lock is taken there,
+and the result lands in the session. The whitelist is `ui.CONTROLS`. `server.py`
+got thinner as a side effect.
+
+**Definition of done: frequency to ±1 % met.** Function generator, 800 Hz sine,
+amplitude 3.0 V: measured 799.37–800.20 Hz across windows from 2 to 200 ms,
+**0.03 %** error on the longer ones and 0.09 % spread. Vpp 3.02 V against 3.0 V —
+inside one ADC step (39 mV on ±5 V). `tools/measure_signal.py` repeats it.
+
+**Noise is no longer reported as a frequency.** A measured threshold rather than
+a guessed one: real waveforms (sine, square, ramp, triangle, and a sine under
+10 % noise) sit at 0.06–0.71 % period jitter; pure noise at 58–73 % in the mock
+and 66–200 % on an unconnected PS2104 probe. The gate was set at 20 %, in the
+empty middle. The few-cycle case — two edges give one interval and therefore 0 %
+jitter by definition, which produced "3756 Hz" from noise — is caught by the
+shape measure Vpp/stdev (2.0 square, 2.8 sine, 3.5 ramp, 5–7 noise).
+
+**Windows no longer outlive their server.** Seven had accumulated: each test
+session opened one, and the process dying left it on screen with a frozen
+measurement. The display now runs in its own Edge profile and
+`close_stale_windows()` closes leftovers — on server shutdown and before every
+launch. `window.close()` in the page is not enough: Chromium refuses it for a
+window the script did not open (measured).
+
+**One window per machine, and it remembers where it was.** Two server processes
+each opened a window although there is a single PS2104 — the guard was per
+process. The proof that a window is watching is now written to
+`%TEMP%/mcp-picoscope-ui.json`, which every process reads (`should_launch()`,
+tested in `tests/test_ui.py`). The same file carries zoom, position and size, with
+the window frame measured so the window does not creep down the screen on every
+launch. `PICOSCOPE_UI_BROWSER=0` serves without opening anything.
+
+**Rounded numbers in everything leaving `analysis.py`.** Statistics to 6
+significant digits, curve points to 5. A reply with hardware-shaped values
+(`adc/32767`) fell from 7 593 to 4 716 characters — **38 % smaller**, the curve
+alone 40 %. An 8-bit ADC resolves one part in 256; eleven digits was precision the
+instrument does not have, paid for in the caller's context window.
+
+**The display made scalable.** Zoom buttons (40–200 %, remembered in the browser)
+plus breakpoints that collapse the layout down to ~320×260. Window launching is
+governed by whether the page has polled in the last 6 seconds rather than by a
+process flag — measured at 67 tool calls → 1 window.
+
+**A live display in Edge.** `ui.py` + `ui.html`: a local server on 8071, the trace
+on a graticule with V/div, readouts, channel and trigger, and a log of MCP calls.
+Opens automatically in an Edge window on the first tool call. `PICOSCOPE_UI=0`
+turns it off. Verified against a 1 kHz mock signal: 1.0002 kHz and 50.0 % duty on
+screen.
+
+**The zero point verified.** Shorted input, all eight ranges: worst offset 0.14
+LSB, under the resolution. The noise floor on ±0.1 V is 0.99 mV Vpp, about 1.3
+LSB. `tools/verify_zero.py`.
+
+**The volt scale verified.** `MAX_ADC = 32767` measured against a 1.5 V alkaline
+cell: ±2/5/10/20 V read 1.6007 / 1.6120 / 1.5931 / 1.6399 V — agreeing within
+47 mV, and within 7 % of the cell's nominal in absolute terms.
+`tools/verify_volt_scale.py`.
+
+**Step 3 verified against the real device.** `backends/ps2000.py` opens,
+configures, captures and exports through the MCP server. `_ensure_dll_on_path()`
+added — without it `picosdk` does not find the driver. `tests/test_hardware.py`,
+which refuses the mock fallback, caught a missing `_timebase_limits`; fixed.
+
+**Step 0 PASSED.** PicoScope 7 T&M installed through winget (it carries
+`ps2000.dll`; a separate PicoSDK was not needed). The device went from
+`Status: Error` to `OK` and answers: variant 2104, hardware 4, driver
+3.0.152.6217. Measured: ranges 100 mV–20 V (20/50 mV rejected), timebases 0–19 =
+20 ns–10.49 ms, an 8092 sample buffer.
+
+**Steps 1–2 and 4–5 built against the mock backend.** Package structure,
+`ScopeSession` with its lock, a mock that imitates timebase snapping, 8-bit
+quantisation and clipping, `analysis.py` (hysteresis crossings, midpoint as the
+level), `export.py` (CSV/NPZ/PNG), twelve MCP tools and the `picoscope://state`
+resource. Unit tests against the mock's ground truth plus a smoke test over the
+real stdio transport, all green.
+
+**Working rules inherited from an earlier project.** SOUL.md, CLAUDE.md,
+LESSONS.md and this log, adapted for a hardware-facing MCP server.

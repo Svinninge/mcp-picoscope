@@ -1,219 +1,227 @@
 # mcp-picoscope
 
-MCP-server som låter Claude styra och läsa av ett **PicoScope PS2104**
-USB-oscilloskop.
+An MCP server that lets Claude drive and read a **PicoScope PS2104** USB
+oscilloscope.
 
-> **Status: v1 klar och verifierad mot riktig PS2104** (2026-09-12). Hela kedjan
-> öppna → konfigurera → fånga → mäta → exportera fungerar mot hårdvaran. Skalan
-> är mätt mot en 1,5 V-cell, nollan mot kortsluten ingång och frekvensen mot en
-> 800 Hz-sinus med 0,03 % fel. Även flanktriggen är verifierad: startpunktens
-> spridning faller från 31 % av Vpp till 0,7 % när den slås på. Kvar: den
-> interaktiva kontrollytan i displayen (issue #1) och streaming (v2).
+> **Status: v1, verified against real hardware** (2026-09-12). The whole chain —
+> open → configure → capture → measure → export — works against the instrument.
+> The volt scale is measured against a 1.5 V cell, the zero against a shorted
+> input, and the frequency against an 800 Hz sine to within 0.03 %. The edge
+> trigger is verified too: the spread of the starting point falls from 31 % of
+> Vpp to 0.7 % when it is armed. Remaining: the timebase control in the display
+> (issue #1) and streaming (v2).
 
-## Tanken
+## The idea
 
-Exponera oscilloskopet som MCP-verktyg, så att man kan säga:
+Expose the oscilloscope as MCP tools, so you can say:
 
-- "Anslut till picoscopet och visa vad som ligger på kanal A"
-- "Trigga på stigande flank vid 1,5 V och fånga 10 ms"
-- "Vad är frekvensen och Vpp på signalen?"
-- "Spara mätningen som CSV och rita en PNG"
+- "Connect to the scope and show me what is on channel A"
+- "Trigger on a rising edge at 1.5 V and capture 10 ms"
+- "What is the frequency and Vpp of this signal?"
+- "Save the measurement as CSV and draw a PNG"
 
-Servern svarar aldrig med råa sampel. En fångst är tiotusentals punkter; du får
-statistik, en nedsamplad kurva (min/max per hink, så spikarna överlever) och en
-sökväg till filen.
+The server never answers with raw samples. A capture is tens of thousands of
+points; you get statistics, a decimated curve (min/max per bucket, so spikes
+survive) and a path to the file.
 
-## Förutsättningar
+## Requirements
 
-| Krav | Not |
+| Requirement | Note |
 |---|---|
-| Python 3.11+ | 64-bitars, måste matcha SDK:ns bitness |
-| PicoScope PS2104 | 1 kanal, 8 bitar, legacy `ps2000`-drivrutin (**inte** `ps2000a`) |
-| `ps2000.dll` 64-bit | Följer med PicoScope-appen (`winget install PicoTechnology.Picoscope.T&M`) eller med PicoSDK |
-| `picosdk` | Picos officiella Python-wrappers, `pip install picosdk` |
+| Python 3.11+ | 64-bit, and it must match the driver's bitness |
+| PicoScope PS2104 | 1 channel, 8 bits, legacy `ps2000` driver (**not** `ps2000a`) |
+| `ps2000.dll` 64-bit | Ships with the PicoScope application (`winget install PicoTechnology.Picoscope.T&M`) or with PicoSDK |
+| `picosdk` | Pico's official Python wrappers, `pip install picosdk` |
 
-De två sista behövs bara för riktig hårdvara. **Mock-backenden gör hela servern
-körbar och testbar utan scope.**
+The last two are only needed for real hardware. **A mock backend makes the whole
+server runnable and testable without a scope.**
 
 ## Installation
 
 ```powershell
-git clone git@github.com:Svinninge/mcp-picoscope.git
+git clone https://github.com/Svinninge/mcp-picoscope.git
 cd mcp-picoscope
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-Egen venv, inte den globala Pythonen: `mcp` 2.x drar in en nyare starlette än
-vissa andra verktyg på maskinen tål.
+Use a dedicated virtualenv rather than the global Python: `mcp` 2.x pulls in a
+newer starlette than some other tooling tolerates.
 
-### Registrera i Claude Code
+### Registering with Claude Code
 
-[.mcp.json](.mcp.json) i projektroten pekar redan på venv-pythonen. Kopiera den
-till det projekt du vill mäta från, eller registrera servern på användarnivå:
+Copy [.mcp.json.example](.mcp.json.example) to `.mcp.json` and adjust the paths
+to your checkout, or register the server at user scope:
 
 ```powershell
-claude mcp add --scope user picoscope -- C:\path\to\mcp-picoscope\.venv\Scripts\python.exe -m mcp_picoscope.server
+claude mcp add --scope user picoscope -- <checkout>\.venv\Scripts\python.exe -m mcp_picoscope.server
 ```
 
-### Hårdvara (steg 0)
+### Hardware (step 0)
 
-1. Installera drivrutinen. Enklast via winget:
-   `winget install PicoTechnology.Picoscope.T&M` — appen bär `ps2000.dll`.
-   PicoSDK 64-bit från Pico Technology fungerar lika bra.
-2. Koppla in PS2104:an. Utan drivrutin står den som `Status: Error` i
-   Enhetshanteraren; med drivrutin som `PicoScope 2000 series PC Oscilloscope`.
+1. Install the driver. Easiest via winget:
+   `winget install PicoTechnology.Picoscope.T&M` — the application carries
+   `ps2000.dll`. The 64-bit PicoSDK from Pico Technology works just as well.
+2. Plug in the PS2104. Without a driver it shows as `Status: Error` in Device
+   Manager; with one, as `PicoScope 2000 series PC Oscilloscope`.
 3. `pip install picosdk`.
-4. `.\.venv\Scripts\python.exe tools\step0_verify.py` skriver ut variant,
-   serienummer, accepterade spänningsområden och hela timebase-tabellen.
-5. `open_device(backend="ps2000")` ska nu ge modell och serienummer.
+4. `.\.venv\Scripts\python.exe tools\step0_verify.py` prints the variant, the
+   serial, the voltage ranges the device accepts and the whole timebase table.
+5. `open_device(backend="ps2000")` should now report model and serial.
 
-Servern hittar DLL:en själv (`_ensure_dll_on_path`). Ligger den någon annanstans,
-peka ut katalogen med miljövariabeln `PICOSDK_DIR`.
+The server finds the DLL itself (`_ensure_dll_on_path`). If it lives somewhere
+unusual, point `PICOSDK_DIR` at the directory holding it.
 
-Stäng PicoScope-appen innan du använder servern — enheten kan bara öppnas av en
-process i taget.
+Close the PicoScope application before using the server — the device can only be
+opened by one process at a time.
 
-## Verktyg
+## Tools
 
-| Verktyg | Beskrivning |
+| Tool | Description |
 |---|---|
-| `list_devices()` | Sök efter anslutna scope. Mocken listas alltid. |
-| `open_device(backend)` | `auto` \| `ps2000` \| `mock`. `auto` faller tillbaka på mocken med tydlig varning. |
-| `close_device()` | Stäng och släpp USB-enheten. |
-| `get_device_info()` | Modell, serienr, drivrutin, kanaler, spänningsområden, gränser. |
-| `get_server_info()` | Version (`System vX.YY \| Deploy vX.YY`), exportkatalog och displayens URL. |
-| `configure_channel(range_v, coupling, enabled)` | Kanal A. Enheten snäpper till närmaste område och svarar vilket. |
-| `configure_trigger(mode, threshold_v, direction, delay_pct, auto_trigger_ms)` | Auto eller flanktrigg. |
-| `configure_mock_signal(...)` | Vad mocken genererar: sine, square, ramp, triangle, noise, dc. |
-| `capture_block(duration_s, samples)` | Fånga ett block → statistik + nedsamplad kurva + capture-id. |
-| `measure(capture_id)` | Vpp, Vmin/Vmax, medel, RMS, frekvens, periodtid, duty cycle. |
-| `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → sökväg. |
-| `autoset()` | Väljer område och tidbas som visar signalen. Letar över tidbaser snabb → långsam, så allt från 50 Hz till 1 MHz hittas. |
-| `start_sweep(mode, window_s)` | Fångar kontinuerligt. `auto` sveper oavsett trigg, `normal` bara på riktig trigg, `single` en gång. |
-| `stop_sweep()` | Stoppar svepet. |
-| `open_ui(force)` | Visar displayen; återanvänder fönstret som redan tittar. `force=true` ger ett extra. |
+| `list_devices()` | Look for connected scopes. The mock is always listed. |
+| `open_device(backend)` | `auto` \| `ps2000` \| `mock`. `auto` falls back to the mock, saying so loudly. |
+| `close_device()` | Close and release the USB device. |
+| `get_device_info()` | Model, serial, driver, channels, voltage ranges, limits. |
+| `get_server_info()` | Version (`System vX.YY \| Deploy vX.YY`), capture directory and the display URL. |
+| `configure_channel(range_v, coupling, enabled)` | Channel A. The device snaps to the nearest range and reports which. |
+| `configure_trigger(mode, threshold_v, direction, delay_pct, auto_trigger_ms)` | Auto or edge trigger. |
+| `configure_mock_signal(...)` | What the mock generates: sine, square, ramp, triangle, noise, dc. |
+| `capture_block(duration_s, samples)` | Capture one block → statistics + decimated curve + capture id. |
+| `measure(capture_id)` | Vpp, Vmin/Vmax, mean, RMS, frequency, period, duty cycle. |
+| `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → path. |
+| `autoset()` | Picks a range and timebase that show the signal. Hunts across timebases fast → slow, so anything from 50 Hz to 1 MHz is found. |
+| `start_sweep(mode, window_s)` | Capture continuously. `auto` sweeps regardless of the trigger, `normal` only on a real trigger, `single` once. |
+| `stop_sweep()` | Stop the sweep. |
+| `open_ui(force)` | Show the display; reuses the window already watching. `force=true` opens another. |
 
-**Resurs:** `picoscope://state` — backend, enhet, kanal, trigg och hållna fångster.
+**Resource:** `picoscope://state` — backend, device, channel, trigger, sweep and
+held captures.
 
-Exporter hamnar i `./captures/`, konfigurerbart via miljövariabeln `CAPTURE_DIR`.
+Exports land in `./captures/`, configurable with the `CAPTURE_DIR` environment
+variable.
 
-## Displayen
+## The display
 
-Första gången ett verktyg anropas startar servern en lokal sida på
-`http://127.0.0.1:8071/` och öppnar den i ett **Edge-fönster i app-läge**. Den
-visar kurvan som ett oscilloskop gör — rutnät, V/div, ms/div — plus mätvärden,
-kanal- och trigginställningar, och en logg över vilka MCP-verktyg som anropats.
-Den uppdateras var 400:e ms.
+The first time a tool is called, the server starts a local page on
+`http://127.0.0.1:8071/` and opens it in an **Edge app window**. It draws the
+trace the way an oscilloscope does — graticule, V/div, ms/div — plus the
+measurements, the channel and trigger settings, and a log of which MCP tools
+have run. It refreshes every 400 ms.
 
-### Trigg och svep i displayen
+### Trigger and sweep
 
-Knapparna **Run · Normal · Single · Stop** är de tre lägena på ett bänkscope:
-`Run` sveper oavsett om triggen löser ut, `Normal` bara på en riktig trigg, och
-`Single` fångar en gång och stannar. **Triggnivån dras med musen** i kurvfönstret
-— linjen syns alltid, dämpad när triggen inte är armerad, och att dra den armerar
-den. Pilknappen växlar stigande/fallande flank.
+The buttons **Run · Normal · Single · Stop** are the three positions on a bench
+scope: `Run` sweeps whether or not the trigger fires, `Normal` only on a real
+trigger, and `Single` captures once and stops. **The trigger level is dragged
+with the mouse** on the trace. The line is always drawn, dimmed when the trigger
+is not armed, and dragging it is what arms it. The arrow button toggles rising
+and falling edge.
 
-En trigg som aldrig löser ut är ett **tillstånd, inte ett fel**: svepet fortsätter
-vänta och skriver ut varför under kurvan, i stället för att stanna.
+A trigger that never fires is a **state, not a fault**: the sweep keeps waiting
+and prints why below the trace instead of stopping.
 
-Servern äger tråden som fångar; sidan ber bara om det. Nivån skickas när du
-**släpper** — en fångst per pixel hade köat bakom sessionslåset och fått scopet
-att släpa efter linjen med sekunder.
+The server owns the thread that captures; the page only asks. The level is sent
+when you **release** — a capture per pixel of travel would queue behind the
+session lock and the scope would lag the line by seconds.
 
-Sidan har en **Autoset**-knapp som kör exakt samma kod som MCP-verktyget, under
-samma lås — resultatet syns i aktivitetsloggen, så du och Claude ser vad den
-andra gjort. I övrigt läser sidan bara; den kan inte ställa kanal eller trigg,
-och aldrig något som matar ut signal. En simulerad signal märks med en orange
-**SIMULERAD**-flagga så att en mock inte kan misstas för en mätning.
+The page also has an **Autoset** button that runs exactly the same code as the
+MCP tool, under the same lock — the result appears in the activity log, so you
+and Claude can each see what the other did. Beyond that the page only reads; it
+cannot set the channel, and nothing that drives the outside world will ever be
+added to it. A simulated signal is flagged with an orange **SIMULERAD** badge so
+a mock cannot be mistaken for a measurement.
 
-**Ett fönster — på hela maskinen.** Det finns ett enda PS2104 på bänken, så ett
-andra fönster påstår att det finns två instrument. Att sidan pollar är beviset
-på att ett fönster tittar, och det beviset skrivs till en delad fil
-(`%TEMP%\mcp-picoscope-ui.json`) som **alla** serverprocesser läser innan de
-startar något. Stänger du fönstret slutar pollarna, anspråket blir inaktuellt
-inom sex sekunder, och nästa verktygsanrop tar tillbaka det.
-`open_ui(force=true)` är den enda vägen förbi regeln.
+**One window, for the whole machine.** There is a single PS2104 on the bench, so
+a second window would claim a second instrument exists. The page polling is the
+proof that a window is watching, and that proof is written to a shared file
+(`%TEMP%\mcp-picoscope-ui.json`) which **every** server process reads before
+launching anything. Close the window and the polls stop, the claim goes stale
+within six seconds, and the next tool call brings it back. `open_ui(force=true)`
+is the only way past the rule.
 
-**Fönstret städas undan.** Displayen körs i en egen Edge-profil, så ett fönster
-vars server avslutats kan stängas utan att din vanliga webbläsare berörs. Det
-sker när servern avslutas, och som säkerhet före varje ny start. (Sidan kan inte
-stänga sig själv — Chromium vägrar `window.close()` för fönster som skriptet
-inte öppnat — så den visar "Servern är borta" om den ändå blir ensam kvar.)
+**The window is cleaned up.** The display runs in its own Edge profile, so a
+window whose server has exited can be closed without touching your normal
+browsing. That happens on server shutdown, and again before any new launch as a
+safety net. (The page cannot close itself — Chromium refuses `window.close()`
+for a window the script did not open — so it shows a "the server is gone" panel
+if it is left alone anyway.)
 
-**Fönstret kommer ihåg sig.** Samma fil bär zoom, position och storlek till
-nästa gång Edge öppnas. Den mäter också upp fönsterramen — skillnaden mellan
-var vi bad Edge placera fönstret och var innehållet hamnade — så att fönstret
-inte vandrar en titelrad nedåt för varje start.
+**The window remembers itself.** The same file carries zoom, position and size
+to the next launch. It also measures the window frame — the difference between
+where we asked Edge to put the window and where the content landed — so the
+window does not creep one title bar down the screen every time.
 
-**Skalbar.** Knapparna −/100 %/+ i huvudet zoomar hela sidan (40–200 %) och
-valet kommer ihåg sig i webbläsaren — användbart på en 300 %-skalad
-Windows-display, där ett "normalt" fönster fyller skärmen. Layouten fäller ihop
-sig efter fönstrets storlek och tappar det minst värdefulla först: först
-aktivitetsloggen, sedan inställningspanelen, sedan de sekundära mätvärdena.
-Kurvan och dess V/div är sist kvar — en kurva utan skala är ingen mätning.
+**Scalable.** The −/100 %/+ buttons zoom the whole page (40–200 %) and the choice
+is remembered — useful on a 300 %-scaled Windows display, where a "normal"
+window fills the screen. The layout collapses with the window and drops the
+least valuable content first: the activity log, then the settings panel, then the
+secondary readouts. The trace and its V/div are the last to go, because a curve
+without its scale is not a measurement.
 
-| Miljövariabel | Effekt |
+| Environment variable | Effect |
 |---|---|
-| `PICOSCOPE_UI=0` | Ingen server, inget fönster. Sätt detta för obevakade körningar. |
-| `PICOSCOPE_UI_PORT` | Annan startport än 8071 (tio portar provas uppåt). |
-| `PICOSCOPE_UI_BROWSER=0` | Servera sidan men öppna aldrig ett fönster — för egen flik, eller för tester. |
+| `PICOSCOPE_UI=0` | No server, no window. Set this for unattended runs. |
+| `PICOSCOPE_UI_PORT` | A start port other than 8071 (ten are tried upwards). |
+| `PICOSCOPE_UI_BROWSER=0` | Serve the page but never open a window — for your own tab, or for tests. |
 
-### Tidbasen följer signalen
+### The timebase follows the signal
 
-Ett fast fönster fungerar inte: 20 ms av en 800 Hz-sinus är 16 perioder och
-läses fint, medan samma 20 ms av 11,8 kHz är 248 perioder och ritas som ett
-grönt block — tre pixlar per period, vilket varken den här displayen eller ett
-bänkscope kan visa upplöst. `tools/ui_session.py` sätter därför fönstret efter
-uppmätt frekvens, ungefär tio perioder, och ändrar det bara när det är fel med
-mer än 1,5× så att tidbasen inte hoppar på sista siffran.
+A fixed window cannot work: 20 ms of an 800 Hz sine is 16 periods and reads
+nicely, while the same 20 ms of 11.8 kHz is 248 periods and draws as a solid
+block — three pixels per period, which neither this display nor a bench scope
+can resolve. The sweep therefore sets the window from the measured frequency, at
+about ten periods, and retunes only when it is off by more than 1.5× so the
+timebase does not twitch on the last digit.
 
-**Autoset letar snabb → långsam.** En för snabb tidbas visar för få flanker och
-förkastas för att den inget säger; en för långsam **aliasar** och förkastas för
-att den ljuger — fel riktning fick en 11,8 kHz-sinus att rapporteras som stabila
-406 Hz. En frekvens tros bara när samplingstakten är minst tio gånger den.
+**Autoset hunts fast → slow.** Too fast a window shows too few edges and is
+rejected for saying nothing; too slow a window **aliases** and is rejected for
+lying — the wrong direction once reported an 11.8 kHz sine as a steady 406 Hz. A
+frequency is believed only when the sample rate is at least ten times it.
 
-Displayen lever exakt så länge MCP-servern gör. För att titta på scopet utan en
-Claude-session igång, håll en egen session öppen:
+The display lives exactly as long as the MCP server does. To watch the scope
+without a Claude session running, hold a session open yourself:
 
 ```powershell
 .\.venv\Scripts\python.exe tools\ui_session.py 3600 auto
 ```
 
-## Exempeldialog
+## Example dialogue
 
-> **Du:** Öppna picoscopet och kör en autoset.
+> **You:** Open the scope and run an autoset.
 >
-> **Claude:** *(open_device → autoset)* Enheten öppnad. Autoset surveyade på
-> ±20 V över 0,02 och 0,2 ms, mätte 11,807 kHz, valde ±5 V och fångade fem
-> perioder: Vpp 3,02 V, duty 49,8 %, RMS 1,78 V.
+> **Claude:** *(open_device → autoset)* Device open. Autoset surveyed on ±20 V
+> over 0.02 and 0.2 ms, measured 11.807 kHz, picked ±5 V and captured five
+> periods: Vpp 3.02 V, duty 49.8 %, RMS 1.78 V.
 >
-> **Du:** Spara den som PNG.
+> **You:** Save it as a PNG.
 >
 > **Claude:** *(export_capture)* `captures\cap0002.png`
 
-## Utveckling
+## Development
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q        # allt (hårdvarutestet hoppas över utan scope)
-.\.venv\Scripts\python.exe tests\test_stdio.py       # röktest mot mock, med utskrift
-.\.venv\Scripts\python.exe tests\test_hardware.py    # röktest mot riktigt scope
+.\.venv\Scripts\python.exe -m pytest tests -q        # everything (the hardware test skips without a scope)
+.\.venv\Scripts\python.exe tests\test_stdio.py       # smoke test against the mock, with output
+.\.venv\Scripts\python.exe tests\test_hardware.py    # smoke test against a real scope
 ```
 
-Mocken bär facit: analysfunktionerna testas mot signaler med känd frekvens,
-amplitud och duty cycle. Hårdvarutestet begär `backend="ps2000"` explicit — det
-får inte falla tillbaka på mocken, för då hade en trasig drivrutinssökväg lyst
-grönt.
+The mock carries the ground truth: the analysis functions are tested against
+signals of known frequency, amplitude and duty cycle. The hardware test asks for
+`backend="ps2000"` explicitly — it must not fall back to the mock, or a broken
+driver path would pass as green.
 
-### Verifieringsverktyg
+### Verification tools
 
-Mot riktig hårdvara, körbara var för sig:
+Against real hardware, each runnable on its own:
 
 ```powershell
-.\.venv\Scripts\python.exe tools\step0_verify.py        # variant, områden, timebase-tabell
-.\.venv\Scripts\python.exe tools\verify_volt_scale.py   # skalan mot en känd spänning
-.\.venv\Scripts\python.exe tools\verify_zero.py         # offset, kortsluten ingång
+.\.venv\Scripts\python.exe tools\step0_verify.py        # variant, ranges, timebase table
+.\.venv\Scripts\python.exe tools\verify_volt_scale.py   # the scale against a known voltage
+.\.venv\Scripts\python.exe tools\verify_zero.py         # offset, shorted input
+.\.venv\Scripts\python.exe tools\verify_trigger.py      # the edge trigger against a periodic signal
+.\.venv\Scripts\python.exe tools\trigger_stability.py   # the same, measured through the display
 ```
 
-Arbetsregler och fallgropar: [SOUL.md](SOUL.md), [CLAUDE.md](CLAUDE.md),
+Working rules and pitfalls: [SOUL.md](SOUL.md), [CLAUDE.md](CLAUDE.md),
 [LESSONS.md](LESSONS.md). Backlog: [TODO.md](TODO.md).

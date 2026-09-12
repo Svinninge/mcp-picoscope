@@ -1,198 +1,210 @@
-# mcp-picoscope — AI-instruktioner (entrypoint)
+# mcp-picoscope — AI instructions (entry point)
 
-Tunn entrypoint. MCP-server som exponerar ett **PicoScope PS2104** som verktyg åt
-en Claude-session: öppna enheten, ställ kanal och trigg, fånga ett block, mät och
-exportera.
+A thin entry point. An MCP server that exposes a **PicoScope PS2104** as tools
+for a Claude session: open the device, set channel and trigger, capture a block,
+measure and export.
 
-**Projektets kärnprincip:** servern **mäter och rapporterar**. Den matar aldrig ut
-signal och rör aldrig mätobjektet. Den svarar aldrig med råa sampel — statistik,
-nedsamplad kurva och filsökväg, annars spränger en fångst kontextfönstret.
+**The project's core principle:** the server **measures and reports**. It never
+drives the outside world and never touches the thing being measured. It never
+answers with raw samples — statistics, a decimated curve and a file path, or a
+single capture would blow the context window.
 
-## Bas-kontext (läs vid sessionsstart)
+## Base context (read at session start)
 
-- **[SOUL.md](SOUL.md)** — HUR vi arbetar (godkännanden, plan-läge, mini-sprint,
-  elegans-paus, lessons-loop, hårdvaru-, kod- och git-regler). **Auktoritativ.**
-- **[LESSONS.md](LESSONS.md)** — lärdomar från tidigare misstag. Läs efter SOUL.
+- **[SOUL.md](SOUL.md)** — HOW we work (approvals, plan mode, mini-sprint, the
+  elegance pause, the lessons loop, hardware, code and git rules).
+  **Authoritative.**
+- **[LESSONS.md](LESSONS.md)** — lessons from earlier mistakes. Read after SOUL.
 
-## Läs on-demand
+## Read on demand
 
-- **[PLAN.md](PLAN.md)** — mål, arkitektur, steg 0–6, risker, öppna frågor.
-  Läs när uppgiften berör arkitektur eller vad som ska byggas härnäst.
-  **Observera:** PLAN.md beskriver måldesignen. Koden är facit — `capture_streaming`
-  finns i planens verktygstabell men är inte byggd (v2, se TODO.md).
-- **[TODO.md](TODO.md)** — aktiv backlog, handhållen i den här repon.
-- **[README.md](README.md)** — installation och kom-igång.
+- **[PLAN.md](PLAN.md)** — goals, architecture, steps 0–6, risks, open
+  questions. Read when the task touches architecture or what to build next.
+  **Note:** PLAN.md describes the target design. The code is the truth —
+  `capture_streaming` appears in the plan's tool table but is not built (v2, see
+  TODO.md).
+- **[TODO.md](TODO.md)** — the active backlog, hand-maintained in this repo.
+- **[README.md](README.md)** — installation and getting started.
 
 ## Layout
 
 ```
-mcp_picoscope/server.py          MCP-ytan. Tunn: översätter, räknar inte.
-mcp_picoscope/scope.py           Värdetyper, backend-protokoll, ScopeSession (låset)
-mcp_picoscope/analysis.py        Vpp/RMS/frekvens/duty + min/max-decimering
-mcp_picoscope/control.py         Åtgärder + svepmotorn — delade av MCP och sidan
+mcp_picoscope/server.py          The MCP surface. Thin: it translates, it does not compute.
+mcp_picoscope/scope.py           Value types, backend protocol, ScopeSession (the lock)
+mcp_picoscope/analysis.py        Vpp/RMS/frequency/duty + min-max decimation
+mcp_picoscope/control.py         Actions and the sweep engine — shared by MCP and the page
 mcp_picoscope/export.py          CSV / NPZ / PNG under captures/
-mcp_picoscope/ui.py              Lokal webbserver + Edge-start (port 8071)
-mcp_picoscope/ui.html            Sidan: kurva, mätvärden, MCP-aktivitet
-mcp_picoscope/backends/mock.py   Simulerad signalkälla — facit för testerna
-mcp_picoscope/backends/ps2000.py Riktig hårdvara via ps2000.dll. Verifierad mot PS2104.
-tests/test_analysis.py           Mätningar mot mockens kända signaler
-tests/test_stdio.py              Röktest över riktig stdio-transport (mock)
-tests/test_hardware.py           Röktest mot riktigt scope; hoppas över utan enhet
-tools/step0_verify.py            Hårdvaruidentitet: variant, områden, timebaser
-tools/verify_volt_scale.py       Skalan mot känd spänning (MAX_ADC)
-tools/verify_zero.py             Offset, kortsluten ingång
-tools/ui_session.py              Håller en session öppen så displayen lever
+mcp_picoscope/ui.py              Local web server + Edge launch (port 8071)
+mcp_picoscope/ui.html            The page: trace, readouts, MCP activity
+mcp_picoscope/backends/mock.py   Simulated signal source — the tests' ground truth
+mcp_picoscope/backends/ps2000.py Real hardware via ps2000.dll. Verified against a PS2104.
+tests/test_analysis.py           Measurements against the mock's known signals
+tests/test_stdio.py              Smoke test over the real stdio transport (mock)
+tests/test_hardware.py           Smoke test against a real scope; skipped without one
+tests/test_ui.py                 Window rules, view memory, sweep engine
+tests/test_page.py               node --check over the page's script
+tools/step0_verify.py            Hardware identity: variant, ranges, timebases
+tools/verify_volt_scale.py       The scale against a known voltage (MAX_ADC)
+tools/verify_zero.py             Offset, shorted input
+tools/verify_trigger.py          The edge trigger against a periodic signal
+tools/trigger_stability.py       The same, measured through the display over HTTP
+tools/measure_signal.py          One signal across several timebases
+tools/ui_session.py              Holds a session open so the display stays live
 ```
 
-**Versioner:** `SYSTEM_VERSION` i `mcp_picoscope/__init__.py` speglar senaste
-git-tagg, `deploy_version.txt` deployen. Båda visas via `version_line()` — i
-`get_server_info()` och i displayens huvud, enligt det globala regelverket.
+**Versions:** `SYSTEM_VERSION` in `mcp_picoscope/__init__.py` mirrors the latest
+git tag, `deploy_version.txt` the deploy. Both are shown by `version_line()` —
+in `get_server_info()` and in the display header.
 
-## Kör och testa
+## Run and test
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q          # allt
-.\.venv\Scripts\python.exe tests\test_stdio.py         # röktest, startar servern
-.\.venv\Scripts\python.exe -m mcp_picoscope.server     # servern manuellt (väntar på stdio)
+.\.venv\Scripts\python.exe -m pytest tests -q          # everything
+.\.venv\Scripts\python.exe tests\test_stdio.py         # smoke test, starts the server
+.\.venv\Scripts\python.exe -m mcp_picoscope.server     # the server by hand (waits on stdio)
 ```
 
-Servern registreras för Claude Code via [.mcp.json](.mcp.json) i projektroten.
+Register the server with Claude Code by copying `.mcp.json.example` to
+`.mcp.json` and adjusting the paths.
 
-## Fallgropar — läs innan du ändrar
+## Pitfalls — read before changing anything
 
-**PS2104 är `ps2000`, inte `ps2000a`.** Fel API-familj svarar "unit not found",
-vilket ser ut som trasig hårdvara. Detta är projektets enskilt viktigaste
-tekniska faktum.
+**The PS2104 is `ps2000`, not `ps2000a`.** The wrong API family answers "unit
+not found", which looks exactly like broken hardware. This is the single most
+important technical fact in the project.
 
-**Steg 0 är gjort (2026-09-12).** Enheten svarar: variant `2104`, serienr
-`<serial>`, hårdvara 4, drivrutin 3.0.152.6217. Uppmätt, inte antaget:
-spänningsområden **100 mV–20 V** (20 mV och 50 mV avvisas), timebase 0–19
-(20 ns–10,49 ms), **buffertdjup 8092 sampel**. Kalibreringen är verifierad i båda ändar: **skalan** mot en 1,5 V-cell
-(fyra områden inom 47 mV, `MAX_ADC = 32767` bekräftad) och **nollan** mot
-kortsluten ingång (värsta offset 0,14 LSB). Kvar: **frekvens ±1 % mot känd
-signal** och **flanktriggen** — se TODO.md.
+**Step 0 is done (2026-09-12).** The device answers: variant `2104`, hardware 4,
+driver 3.0.152.6217. Measured, not assumed: voltage ranges **100 mV–20 V** (it
+rejects 20 mV and 50 mV), timebases 0–19 (20 ns–10.49 ms), **buffer depth 8092
+samples**. Calibration is verified at both ends: the **scale** against a 1.5 V
+cell (four ranges within 47 mV, `MAX_ADC = 32767` confirmed) and the **zero**
+against a shorted input (worst offset 0.14 LSB). Frequency is verified against an
+800 Hz sine (0.03 % error) and the edge trigger by the spread of the starting
+point (31 % of Vpp free-running, 0.7 % armed).
 
-**Drivrutinen hittas inte av sig själv.** `picosdk` löser DLL:en med
-`ctypes.util.find_library`, som på Windows söker i `PATH` — och ingenting lägger
-Picos katalog där. `_ensure_dll_on_path()` i `backends/ps2000.py` gör det, med
-`PICOSDK_DIR` som övertrumfar. På den här maskinen finns `ps2000.dll` inte i
-`SDK\lib` utan i `PicoScope 7 T&M Stable\`, eftersom appen installerades i
-stället för SDK:n; båda fungerar.
+**The driver is not found on its own.** `picosdk` resolves the DLL with
+`ctypes.util.find_library`, which searches `PATH` on Windows — and nothing puts
+Pico's directory there. `_ensure_dll_on_path()` in `backends/ps2000.py` does it,
+with `PICOSDK_DIR` overriding. On the development machine `ps2000.dll` lives in
+`PicoScope 7 T&M Stable\` rather than `SDK\lib`, because the application was
+installed instead of the SDK; both work.
 
-**Ett fönster på hela maskinen — inte per process.** Kroken sitter i
-`tool()`-dekoratorn eftersom varje verktygsanrop redan passerar den. Att sidan
-**pollat nyligen** är beviset på att ett fönster tittar (`viewer_present()`,
-6 s), och samma bevis skrivs till `%TEMP%\mcp-picoscope-ui.json` som varje
-serverprocess läser (`window_claim()`). Det räckte inte med en variabel i
-processen: två serverprocesser — Claude Codes registrerade server och en egen
-`tools/ui_session.py` — öppnade varsitt fönster, och det finns **ett** PS2104.
-Beslutet ligger i `should_launch()` just för att gå att testa utan webbläsare
-(`tests/test_ui.py`). `PICOSCOPE_UI_BROWSER=0` serverar sidan utan att öppna
-något.
+**One window for the whole machine — not one per process.** The hook sits in the
+`tool()` decorator because every tool call already passes through it. A **recent
+poll** from the page is the proof that a window is watching (`viewer_present()`,
+6 s), and that same proof is written to `%TEMP%\mcp-picoscope-ui.json`, which
+every server process reads (`window_claim()`). A variable inside one process was
+not enough: two server processes — the registered server and a separate
+`tools/ui_session.py` — each opened a window, and there is **one** PS2104. The
+decision lives in `should_launch()` precisely so it can be tested without a
+browser (`tests/test_ui.py`). `PICOSCOPE_UI_BROWSER=0` serves the page without
+opening anything.
 
-**Fönstret öppnas i en egen Edge-profil** (`%TEMP%\picoscope-edge-profile`).
-Det kostar en kall profilstart och köper det enda som spelar roll: varje process
-som använder katalogen är vår, så ett kvarglömt fönster går att stänga
-deterministiskt utan att röra Pers egen webbläsare. `close_stale_windows()`
-körs **före** varje start (då finns inget fönster som tittar, alltså är allt som
-står kvar ett lik) och i `stop()` när servern avslutas — men bara om anspråket
-är vårt, annars vore det en annan sessions levande fönster.
+**The window opens in its own Edge profile** (`%TEMP%\picoscope-edge-profile`).
+That costs a cold profile start and buys the only thing that matters: every
+process using that directory is ours, so a leftover window can be closed
+deterministically without touching the user's own browsing.
+`close_stale_windows()` runs **before** every launch (we only get there with no
+window watching, so anything still standing is a corpse) and in `stop()` when the
+server exits — but only when the claim is ours, or it would be another session's
+live window.
 
-**Sidan kan inte stänga sig själv.** `window.close()` vägras av Chromium för ett
-fönster som skriptet inte öppnat, och ett `--app`-fönster är ett sådant —
-uppmätt, inte antaget. Sidan visar därför en tydlig "Servern är borta"-ruta när
-den tappat kontakten i tio sekunder, men det är serverns svep som är garantin.
+**The page cannot close itself.** Chromium refuses `window.close()` for a window
+the script did not open, and an `--app` window is one of those — measured, not
+assumed. The page therefore shows a clear "the server is gone" panel after ten
+seconds without contact, but the server's sweep is the guarantee.
 
-**Displayen minns zoom, position och storlek** i samma fil, inte i
-`localStorage` — den är per origin, och porten byts så fort en annan process
-redan äger 8071. Ramoffseten (skillnaden mellan var vi bad Edge placera
-fönstret och var innehållet hamnade) mäts upp vid första rapporten efter en
-start; utan den vandrar fönstret en titelrad nedåt varje gång.
-`PICOSCOPE_UI=0` stänger av alltihop; testerna sätter det, och allt som körs
-obevakat bör göra detsamma. Sidan läser sessionen och får dessutom köra de
-åtgärder som står i `ui.CONTROLS` — idag bara `autoset`. Varje sådan åtgärd
-måste uppfylla tre krav: **en implementation** i `control.py` som MCP-verktyget
-också använder, **sessionslåset** taget där, och **ett resultat som landar i
-sessionen** så att `picoscope://state` talar sanning efteråt. Lägg aldrig något
-i vitlistan som matar ut signal.
+**The display remembers zoom, position and size** in that same file, not in
+`localStorage` — that is per origin, and the port changes as soon as another
+process already owns 8071. The frame offset (the difference between where we
+asked Edge to place the window and where the content landed) is measured on the
+first report after a launch; without it the window creeps one title bar down the
+screen every time.
 
-**Två servrar kan kapa samma port på Windows.** `HTTPServer` sätter
-`allow_reuse_address`, och `SO_REUSEADDR` betyder inte samma sak på Windows som
-på Unix: där får en ny socket **ta över** en levande lyssnare. Två sessioner
-"ägde" 8071 samtidigt och anslutningarna landade på den som vann kapplöpningen,
-så fönstret visade en annan sessions scope. `_Server.allow_reuse_address = False`
-gör att bindningen misslyckas ärligt och portskanningen går vidare till 8072.
+**The page is a control surface, under three rules.** It reads the session, and
+may run the actions listed in `ui.CONTROLS` — today `autoset`, `trigger`,
+`sweep`. Each one needs: **one implementation** in `control.py` that the MCP tool
+uses too, **the session lock** taken there, and **a result that lands in the
+session** so `picoscope://state` tells the truth afterwards. Never put anything
+in that whitelist that drives the outside world.
 
-**CSS-zoom: mät på ett ställe.** `getBoundingClientRect()` är zoom-skalad,
-`clientWidth`/`clientHeight` är det inte. Att mäta canvasen med den ena och rita
-med den andra sträcker kurvan och flyttar nollinjen från mitten. `fit()` mäter
-en gång till `viewW`/`viewH`, `draw()` använder bara dem. Av samma skäl sätts
-body-höjden i skript: `100vh` räknas *före* zoomen, så vid 70 % blir sidan 1/0,7
-gånger för hög.
+**Two servers can hijack the same port on Windows.** `HTTPServer` sets
+`allow_reuse_address`, and `SO_REUSEADDR` does not mean the same thing on Windows
+as on Unix: there, a new socket can **take over** a live listener. Two sessions
+both "owned" 8071 and connections landed on whichever won the race, so the window
+showed another session's scope. `_Server.allow_reuse_address = False` makes the
+bind fail honestly and the port scan moves on to 8072.
 
-**En `<canvas>` i en flexkolumn växer av sig själv.** Att skriva `canvas.height`
-sätter elementets *intrinsic* storlek, så en `flex: 1`-canvas trycker ut resten
-av kolumnen vid varje omritning. Därför ligger den `position: absolute` i en
-wrapper med `min-height: 0` och får sin storlek därifrån. Buggen syntes som att
-mätvärdesraden "försvann" och kurvan var avklippt nedtill.
+**CSS zoom: measure in one place.** `getBoundingClientRect()` is zoom-scaled,
+`clientWidth`/`clientHeight` are not. Measuring the canvas with one and drawing
+with the other stretches the trace and pushes its zero line off centre. `fit()`
+measures once into `viewW`/`viewH` and `draw()` uses only those. For the same
+reason the body height is set in script: `100vh` is computed *before* the zoom,
+so at 70 % the page lays out 1/0.7 times too tall.
 
-**Mocken imiterar hårdvara med flit.** Sampelintervallet snäpper till en
-2^n-timebase, sampel kvantiseras till 8 bitar av området, och en för stor signal
-klipper. Det är inte krångel — det tvingar varje anropare att läsa **faktisk**
-samplingshastighet ur fångsten istället för att lita på den den bad om.
+**A `<canvas>` in a flex column grows by itself.** Writing `canvas.height` sets
+the element's *intrinsic* size, so a `flex: 1` canvas pushes the rest of the
+column out on every redraw. It therefore sits `position: absolute` inside a
+wrapper with `min-height: 0` and takes its size from there. The bug looked like
+the readout row "disappearing" and the trace being clipped at the bottom.
 
-**Frekvens mäts på nollgenomgångar, inte FFT.** En fyrkant lägger det mesta av
-energin i övertonerna och en långsam signal hinner inte två perioder i fönstret.
-Genomgångarna klarar båda och ger duty cycle på köpet. Nivån är **mittpunkten
-mellan min och max**, inte medelvärdet: en 20 %-fyrkant har ett medelvärde långt
-från sin egen mittpunkt, och mätt mot det blir varje sådan våg ~50 %.
+**The mock imitates hardware deliberately.** The sample interval snaps to a 2^n
+timebase, samples are quantised to 8 bits of the range, and a signal larger than
+the range clips. That is not friction — it forces every caller to read the
+**actual** sample rate off the capture instead of trusting the one it asked for.
 
-**Svepet är en tråd, och den har tre skyldigheter.** `SweepRunner` i
-`control.py` fångar av sig själv tills den stoppas. Den måste gå att stoppa
-(`threading.Event` + `join(5 s)`), den tar **sessionslåset per fångst och aldrig
-över loopen** (annars svälter MCP-anropen — `test_the_lock_is_free_between_sweeps`
-fäller det), och den måste överleva att en fångst misslyckas: **en trigg som
-aldrig löser ut är ett tillstånd, inte ett fel**, så loopen rapporterar och
-fortsätter. `close_device` och serveravslut stoppar den först.
+**Frequency comes from level crossings, not an FFT.** A square wave puts most of
+its energy in the harmonics and a slow signal may not fit two periods in the
+window. Crossings handle both and give duty cycle for free. The level is the
+**midpoint between min and max**, not the mean: a 20 % duty square has a mean far
+from its own midpoint, and measured against that every such wave reads ~50 %.
 
-**Svepläget mappas på hårdvarutriggen.** `auto` behåller auto_trigger-räddningen,
-`normal` nollar den så att triggen måste lösa ut på riktigt — och armerar en
-edge-trigg om scopet står fritt löpande, annars vore knappen verkningslös i
-precis det läge enheten öppnar i. Nivån och flanken rör den aldrig; de är
-användarens.
+**The sweep is a thread, and it has three obligations.** `SweepRunner` in
+`control.py` captures on its own until stopped. It must be stoppable
+(`threading.Event` + `join(5 s)`), it takes **the session lock per capture and
+never across the loop** (otherwise MCP calls starve —
+`test_the_lock_is_free_between_sweeps` catches that), and it must survive a
+capture failing: **a trigger that never fires is a state, not a fault**, so the
+loop reports and continues. `close_device` and server shutdown stop it first.
 
-**Autoset letar snabb → långsam, aldrig tvärtom.** En för snabb tidbas visar för
-få flanker och avvisas för att den inget säger; en för långsam **aliasar** och
-avvisas för att den ljuger. Fel riktning fick en 11,8 kHz-sinus att rapporteras
-som 406 Hz, helt stabilt. En frekvens tros bara när samplingstakten är minst
-`AUTOSET_MIN_SAMPLES_PER_PERIOD` (10) gånger den.
+**The sweep mode maps onto the hardware trigger.** `auto` keeps the auto-trigger
+rescue, `normal` clears it so the trigger must really fire — and arms an edge
+trigger when the scope is free-running, or the button would do nothing in exactly
+the state the device opens in. Neither touches the level or the direction; those
+are the user's.
 
-**Brus är inte en frekvens.** Amplitudtröskeln (`MIN_SWING_FRAC`, 2 % av
-området) räcker inte — på ett smalt område klarar brus den lätt, och en okopplad
-sond rapporterades en gång som "456 Hz". Periodiciteten avgör:
-`MAX_JITTER_PCT = 20` mot uppmätta 0,06–0,71 % för riktiga vågformer och
-58–200 % för brus. Med färre än tre perioder finns inga intervall att jämföra
-(två flanker ger 0 % jitter per definition), och då används formmåttet
-Vpp/stdev i stället. Trösklarna är **uppmätta**, och siffrorna står i
-`analysis.py` — ändra dem inte utan att mäta om.
+**Autoset hunts fast → slow, never the other way.** Too fast a timebase shows too
+few edges and is rejected for saying nothing; too slow a one **aliases** and is
+rejected for lying. The wrong direction reported an 11.8 kHz sine as a perfectly
+steady 406 Hz. A frequency is believed only when the sample rate is at least
+`AUTOSET_MIN_SAMPLES_PER_PERIOD` (10) times it.
 
-**Nedsampling är min/max per hink.** Var N:te sampel tappar spikarna, vilket är
-precis det man köpte ett oscilloskop för att se. `test_downsample_keeps_the_spike`
-fäller bygget om någon förenklar det.
+**Noise is not a frequency.** The amplitude threshold (`MIN_SWING_FRAC`, 2 % of
+the range) is not enough — on a narrow range noise clears it easily, and an
+unconnected probe was once reported as "456 Hz". Periodicity decides:
+`MAX_JITTER_PCT = 20` against a measured 0.06–0.71 % for real waveforms and
+58–200 % for noise. With fewer than three periods there are no intervals to
+compare (two edges give 0 % jitter by definition), and the shape measure
+Vpp/stdev is used instead. The thresholds are **measured**, and the numbers are
+in `analysis.py` — do not change them without measuring again.
 
-**Ett undantag som når MCP-ytan måste bli `ToolError`.** Dekoratorn `tool()` i
-`server.py` gör det. Allt annat blir "Error executing tool X" i sessionen, vilket
-inte hjälper någon som inte kan se skärmen.
+**Decimation is min/max per bucket.** Every N-th sample drops the spikes, which
+is precisely what one buys an oscilloscope to see.
+`test_downsample_keeps_the_spike` fails the build if anyone simplifies it.
 
-**`mcp` 2.x, inte 1.x.** `FastMCP` heter `MCPServer` sedan 2.0
-(`from mcp.server.mcpserver import MCPServer`). Egen venv — installera inte i den
-globala Pythonen, den bär platformio.
+**An exception that reaches the MCP surface must become a `ToolError`.** The
+`tool()` decorator in `server.py` does that. Anything else becomes "Error
+executing tool X" in the session, which helps nobody who cannot see the screen.
 
-## Hårdvara
+**`mcp` 2.x, not 1.x.** `FastMCP` has been called `MCPServer` since 2.0
+(`from mcp.server.mcpserver import MCPServer`). Use a dedicated virtualenv — do
+not install into the global Python.
 
-Byggd mot `dev-laptop` (Dell XPS 15 9500, Windows 11, Python 3.13 64-bit).
-PicoScope PS2104 (serienr <serial>, kalibrerad <date>): 1 kanal, 8 bitar,
-ingen signalgenerator, 50 MS/s, 8092 sampels buffert, 100 mV–20 V.
-Drivrutinen kom med **PicoScope 7 T&M** via winget
-(`PicoTechnology.Picoscope.T&M`) — PicoSDK som separat paket behövs alltså inte,
-appen bär samma `ps2000.dll`. 64-bitars för att matcha Pythonen.
+## Hardware
+
+Built against a Dell XPS 15 9500, Windows 11, Python 3.13 64-bit.
+PicoScope PS2104: 1 channel, 8 bits, no signal generator, 50 MS/s, an 8092
+sample buffer, 100 mV–20 V. The driver came with **PicoScope 7 T&M** via winget
+(`PicoTechnology.Picoscope.T&M`), so PicoSDK as a separate package is not
+required — the application carries the same `ps2000.dll`. 64-bit, to match the
+Python.

@@ -23,3 +23,6 @@ desktop.ini
 # Session-lokalt
 scratch/
 .mcp.json.local
+
+# Local machine paths — ship .mcp.json.example instead
+.mcp.json

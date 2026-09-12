@@ -2,7 +2,7 @@
 """Real hardware backend for the PicoScope 2104 via the legacy ps2000 driver.
 
 STATUS: verified against the real device 2026-09-12 (PLAN.md step 0). The unit
-reports variant "2104", serial <serial>, hardware 4, driver 3.0.152.6217; the
+reports variant "2104", hardware 4, driver 3.0.152.6217; the
 volt scale is measured against a 1.5 V cell, the zero against a shorted input,
 the frequency against an 800 Hz sine, and the edge trigger by the spread of the
 starting point: free-running captures start anywhere (31 % of Vpp), edge-

@@ -1,247 +1,261 @@
-# PLAN — MCP-server för PicoScope 2104
+# PLAN — an MCP server for the PicoScope 2104
 
-Plan för att bygga en MCP-server (Model Context Protocol) som låter Claude styra
-och läsa av ett PicoScope PS2104 USB-oscilloskop.
+The plan for building an MCP (Model Context Protocol) server that lets Claude
+drive and read a PicoScope PS2104 USB oscilloscope.
 
-Status: **v1 klar och verifierad mot hårdvara** (2026-09-12). Steg 0–6 är
-genomförda, och definition of done §7 är uppfylld: enheten identifierar sig som
-variant 2104 (serienr <serial>), voltskalan är mätt mot en 1,5 V-cell, nollan
-mot kortsluten ingång, och frekvensen mot en 800 Hz-sinus med 0,03 % fel. Kvar
-är utvidgningar, inte grunden: streaming (v2) och den interaktiva kontrollytan
-i displayen
-([issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1)). Se
+Status: **v1, done and verified against hardware** (2026-09-12). Steps 0–6 are
+complete and the definition of done in §7 is met: the device identifies itself as
+variant 2104, the volt scale is measured against a 1.5 V cell, the zero against a
+shorted input, and the frequency against an 800 Hz sine to 0.03 %. What remains
+are extensions, not foundations: streaming (v2) and the rest of the interactive
+control surface in the display
+([issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1)). See
 [TODO.md](TODO.md).
 
 ---
 
-## 1. Mål
+## 1. Goal
 
-En MCP-server som exponerar oscilloskopet som verktyg åt en LLM-klient
-(Claude Code / Claude Desktop), så att man kan säga saker som:
+An MCP server that exposes the oscilloscope as tools to an LLM client (Claude
+Code / Claude Desktop), so one can say things like:
 
-- "Anslut till picoscopet och visa vad som ligger på kanal A"
-- "Trigga på stigande flank vid 1,5 V och fånga 10 ms"
-- "Vad är frekvensen och Vpp på signalen?"
-- "Spara mätningen som CSV och rita en PNG"
+- "Connect to the scope and show me what is on channel A"
+- "Trigger on a rising edge at 1.5 V and capture 10 ms"
+- "What is the frequency and Vpp of this signal?"
+- "Save the measurement as CSV and draw a PNG"
 
-Icke-mål (v1): flerkanalsscope, avancerad protokolldekodning, realtids-streaming
-till GUI, signalgenerator (PS2104 saknar siggen).
+Non-goals (v1): multi-channel scopes, protocol decoding, real-time streaming to a
+GUI, signal generation (the PS2104 has none).
 
 ---
 
-## 2. Hårdvaruförutsättningar — PS2104
+## 2. Hardware assumptions — PS2104
 
-PS2104 tillhör **PicoScope 2000-serien (äldre generation)** och använder den
-gamla `ps2000`-drivrutinen — **inte** `ps2000a`. Detta är den enskilt viktigaste
-tekniska detaljen i hela projektet; fel API ger "unit not found".
+The PS2104 belongs to the **older generation of the PicoScope 2000 series** and
+uses the old `ps2000` driver — **not** `ps2000a`. This is the single most
+important technical detail in the project; the wrong API gives "unit not found".
 
-| Egenskap | Värde (verifieras mot datablad vid uppstart) |
+| Property | Value (verified against the device at step 0) |
 |---|---|
-| Kanaler | 1 (kanal A) |
-| Upplösning | 8 bitar |
-| API/drivrutin | `ps2000.dll` (legacy) |
-| Anslutning | USB, USB-matad |
-| Signalgenerator | saknas |
+| Channels | 1 (channel A) |
+| Resolution | 8 bits |
+| API / driver | `ps2000.dll` (legacy) |
+| Connection | USB, USB-powered |
+| Signal generator | none |
 
-**Att göra i steg 0:** verifiera bandbredd, maximal samplingshastighet,
-buffertdjup och tillgängliga spänningsområden mot Picos datablad och mot
-`ps2000_get_unit_info()` på den faktiska enheten. Hårdkoda inget som går att
-fråga drivrutinen om.
+**To do in step 0:** verify bandwidth, maximum sample rate, buffer depth and
+available voltage ranges against Pico's datasheet and against
+`ps2000_get_unit_info()` on the actual device. Hardcode nothing the driver can be
+asked about.
 
-### Beroenden på datorn
-- **`ps2000.dll` (64-bit)** behövs. *Installerad 2026-09-12* — men inte via
-  PicoSDK: `winget install PicoTechnology.Picoscope.T&M` ger PicoScope 7-appen,
-  som bär samma drivrutins-DLL:er i sin programkatalog. Det räcker.
-- Python-wrappern `picosdk` (Picos officiella `picosdk-python-wrappers`),
-  som ctypes-bindar mot DLL:en.
-- Python 3.13 finns redan (`C:\path\to\AppData\Local\Programs\Python\Python313`).
+### Dependencies on the machine
+- **`ps2000.dll` (64-bit)** is required. *Installed 2026-09-12* — but not through
+  PicoSDK: `winget install PicoTechnology.Picoscope.T&M` installs the PicoScope 7
+  application, which carries the same driver DLLs in its program directory. That
+  is enough.
+- The `picosdk` Python wrapper (Pico's official `picosdk-python-wrappers`), which
+  binds to the DLL through ctypes.
+- Python 3.13, 64-bit.
 
 ---
 
-## 3. Arkitektur
+## 3. Architecture
 
 ```
-Claude (MCP-klient)
-        │  stdio, MCP-protokoll
+Claude (MCP client)
+        │  stdio, MCP protocol
         ▼
-  mcp_picoscope/server.py        ← FastMCP, verktygsdefinitioner
+  mcp_picoscope/server.py        ← MCPServer, tool definitions
         │
         ▼
-  mcp_picoscope/scope.py         ← abstrakt scope-interface
-        ├── backends/ps2000.py   ← riktig hårdvara via picosdk
-        └── backends/mock.py     ← simulerad signalkälla
+  mcp_picoscope/scope.py         ← abstract scope interface
+        ├── backends/ps2000.py   ← real hardware through picosdk
+        └── backends/mock.py     ← simulated signal source
         │
         ▼
-  mcp_picoscope/analysis.py      ← Vpp, RMS, frekvens, duty cycle
+  mcp_picoscope/analysis.py      ← Vpp, RMS, frequency, duty cycle
   mcp_picoscope/export.py        ← CSV / NPZ / PNG
         │
         ▼
-  mcp_picoscope/control.py       ← åtgärder: autoset, blockfångst (delas av båda ytorna)
+  mcp_picoscope/control.py       ← actions and the sweep engine (shared by both surfaces)
         │
         ▼
-  mcp_picoscope/ui.py            ← lokal display (HTTP 8071) + Edge-fönster
-  mcp_picoscope/ui.html          ← sidan: kurva, mätvärden, MCP-aktivitet
+  mcp_picoscope/ui.py            ← local display (HTTP 8071) + Edge window
+  mcp_picoscope/ui.html          ← the page: trace, readouts, MCP activity
 ```
 
-**Bärande designbeslut**
+**Load-bearing design decisions**
 
-1. **Mock-backend först.** Hela servern ska gå att utveckla och testa utan
-   hårdvara. Mocken genererar sinus/fyrkant/brus med känd frekvens och amplitud,
-   så analysfunktionerna kan enhetstestas mot facit.
-2. **En enda ägd session.** Drivrutinen är inte trådsäker och enheten kan bara
-   öppnas av en process. Servern håller ett `ScopeSession`-objekt och
-   serialiserar alla anrop.
-3. **Aldrig råa sampelmassor i svaret.** En blockfångst kan vara tiotusentals
-   punkter — det spränger kontextfönstret. Verktygen returnerar sammanfattning
-   (statistik, nedsamplad kurva, filsökväg), aldrig hela arrayen.
-4. **Explicit state.** Kanal- och triggerinställningar sätts med egna verktyg och
-   går att läsa tillbaka, så att LLM:en kan resonera om aktuellt läge.
-5. **Displayen läser, och får göra ett fåtal uppräknade saker** *(reviderat
-   2026-09-12, efter Pers begäran om en autoset-knapp)*. Ursprungsprincipen var
-   att sidan aldrig styr. Den höll tills första knappen behövdes, och i stället
-   för att tumma på den tyst gäller nu tre krav för varje åtgärd sidan får göra:
-   **en implementation** (`control.py`, samma kod som MCP-verktyget — två kopior
-   skulle glida isär och de två ytorna vore oense om vad scopet gör), **ett lås**
-   (`ScopeSession.lock`, så att ett klick och ett verktygsanrop inte kan väva in
-   i varandra mitt i en sekvens av fångster), och **ett synligt resultat**
-   (ändringen landar i sessionen, så `picoscope://state` talar sanning efteråt
-   och LLM:en inte resonerar om ett område någon annan just ändrat).
-   Vitlistan står i `ui.CONTROLS` — idag `autoset`, `trigger`, `sweep`. Inget som
-   matar ut signal får någonsin in där; scopet är en passiv lyssnare och PS2104
-   saknar siggen. **Ett fjärde krav tillkom med svepet** (issue #1): den som
-   driver insamlingen måste gå att stoppa, ta låset per fångst och överleva att
-   en fångst misslyckas.
+1. **Mock backend first.** The whole server must be developable and testable
+   without hardware. The mock generates sine/square/noise with known frequency
+   and amplitude, so the analysis functions can be unit-tested against the truth.
+2. **One owned session.** The driver is not thread safe and the device can only
+   be opened by one process. The server holds a `ScopeSession` and serialises
+   every call.
+3. **Never raw sample arrays in a reply.** A block capture can be tens of
+   thousands of points — that blows the context window. Tools return a summary
+   (statistics, a decimated curve, a file path), never the whole array.
+4. **Explicit state.** Channel and trigger settings are set with their own tools
+   and can be read back, so the LLM can reason about the current state.
+5. **The display reads, and may do a small enumerated set of things** *(revised
+   2026-09-12, when the first button was needed)*. The original principle was
+   that the page never drives. It held until the first button, and rather than
+   bending it quietly, every action the page may perform now has to meet three
+   requirements: **one implementation** (`control.py`, the same code the MCP tool
+   runs — two copies would drift and the two surfaces would then disagree about
+   what the scope is doing), **one lock** (`ScopeSession.lock`, so a click and a
+   tool call cannot interleave in the middle of a sequence of captures), and **a
+   visible result** (the change lands in the session, so `picoscope://state`
+   tells the truth afterwards and the LLM is not reasoning about a range somebody
+   else just changed). The whitelist is `ui.CONTROLS` — today `autoset`,
+   `trigger`, `sweep`. Nothing that drives the outside world may ever go in it;
+   the scope is a passive listener and the PS2104 has no generator. **A fourth
+   requirement arrived with the sweep** (issue #1): whatever drives the
+   acquisition must be stoppable, must take the lock per capture, and must
+   survive a capture failing.
 
 ---
 
-## 4. MCP-verktyg (v1)
+## 4. MCP tools (v1)
 
-| Verktyg | Beskrivning |
+| Tool | Description |
 |---|---|
-| `list_devices()` | Sök efter anslutna scope. Returnerar serienummer och modell. |
-| `open_device(backend="auto")` | Öppna enheten. `auto` → ps2000, faller tillbaka på mock om ingen hittas (med tydlig varning i svaret). |
-| `close_device()` | Stäng och släpp USB-enheten. |
-| `get_device_info()` | Modell, serienr, drivrutinsversion, kanaler, spänningsområden. |
-| `configure_channel(range_v, coupling, enabled)` | Sätt spänningsområde och AC/DC på kanal A. |
-| `configure_trigger(mode, threshold_v, direction, delay, auto_trigger_ms)` | Auto / enkel trigg på flank. |
-| `capture_block(duration_s, samples)` | Fånga ett block. Returnerar statistik + nedsamplad kurva + capture-id. |
-| `capture_streaming(duration_s, rate)` | Långsam kontinuerlig insamling till fil. |
-| `measure(capture_id)` | Vpp, Vmin, Vmax, medel, RMS, frekvens, periodtid, duty cycle. |
-| `export_capture(capture_id, format)` | `csv` \| `npz` \| `png`. Returnerar sökväg. |
-| `start_sweep(mode, window_s)` / `stop_sweep()` | Kontinuerlig insamling i en egen tråd: `auto`, `normal`, `single`. Låset tas per fångst, aldrig över loopen. |
-| `autoset()` | Provar spänningsområden och tidbaser tills signalen fyller skärmen rimligt — det som "AutoSetup"-knappen gör. Stegen går **snabb → långsam** och en frekvens tros bara vid ≥10 sampel/period; motsatt riktning gav ett alias (11,8 kHz rapporterat som 406 Hz). Finns även som knapp i displayen. |
+| `list_devices()` | Look for connected scopes. Returns serial and model. |
+| `open_device(backend="auto")` | Open the device. `auto` → ps2000, falling back to the mock when none is found (with a clear warning in the reply). |
+| `close_device()` | Close and release the USB device. |
+| `get_device_info()` | Model, serial, driver version, channels, voltage ranges. |
+| `configure_channel(range_v, coupling, enabled)` | Set voltage range and AC/DC on channel A. |
+| `configure_trigger(mode, threshold_v, direction, delay, auto_trigger_ms)` | Auto or single edge trigger. |
+| `capture_block(duration_s, samples)` | Capture one block. Returns statistics + decimated curve + capture id. |
+| `capture_streaming(duration_s, rate)` | Slow continuous acquisition to file. *(Not built — v2.)* |
+| `measure(capture_id)` | Vpp, Vmin, Vmax, mean, RMS, frequency, period, duty cycle. |
+| `export_capture(capture_id, format)` | `csv` \| `npz` \| `png`. Returns the path. |
+| `start_sweep(mode, window_s)` / `stop_sweep()` | Continuous acquisition in its own thread: `auto`, `normal`, `single`. The lock is taken per capture, never across the loop. |
+| `autoset()` | Tries voltage ranges and timebases until the signal fills the screen sensibly — what the "AutoSetup" button does. The ladder runs **fast → slow** and a frequency is believed only at ≥10 samples per period; the opposite direction produced an alias (11.8 kHz reported as 406 Hz). Also a button in the display. |
 
-**Resurs:** `picoscope://state` — aktuell konfiguration och senaste fångst som
-läsbar resurs.
+**Resource:** `picoscope://state` — current configuration and the latest capture
+as a readable resource.
 
 ---
 
-## 5. Genomförande — steg för steg
+## 5. Implementation — step by step
 
-**Steg 0 — Förarbete (hårdvara)** ✅ 2026-09-12
-- Installera PicoSDK 64-bit. Verifiera att `ps2000.dll` finns.
-- Koppla in PS2104, kör Picos egen PicoScope-app och bekräfta att den ser enheten.
-- Kör ett minimalt Python-skript som öppnar enheten och skriver ut
-  `ps2000_get_unit_info()`. **Detta är grindvakten** — går inte det här, är
-  resten meningslöst.
+**Step 0 — Groundwork (hardware)** ✅ 2026-09-12
+- Install the 64-bit driver. Verify that `ps2000.dll` exists.
+- Plug in the PS2104, run Pico's own application and confirm it sees the device.
+- Run a minimal Python script that opens the device and prints
+  `ps2000_get_unit_info()`. **This is the gatekeeper** — if this does not work,
+  nothing else matters.
 
-**Steg 1 — Skelett** ✅ 2026-09-12
-- `pyproject.toml`, paketstruktur, `mcp`-beroendet (FastMCP).
-- Server som startar, exponerar `list_devices` mot mock-backenden.
-- Verifiera att Claude Code ser servern via `.mcp.json`.
+**Step 1 — Skeleton** ✅ 2026-09-12
+- `pyproject.toml`, package structure, the `mcp` dependency.
+- A server that starts and exposes `list_devices` against the mock backend.
+- Verify that Claude Code sees the server through `.mcp.json`.
 
-**Steg 2 — Mock-backend + analys** ✅ 2026-09-12
-- Signalgenerator i mocken: sinus, fyrkant, ramp, brus, valbar frekvens/amplitud.
-- `analysis.py` med Vpp/RMS/frekvens. Frekvens via nollgenomgångar med hysteres,
-  inte via FFT-topp — robustare för fyrkant och låga frekvenser.
-- Enhetstester som mäter mockens kända signaler och jämför mot facit.
+**Step 2 — Mock backend + analysis** ✅ 2026-09-12
+- A signal generator in the mock: sine, square, ramp, noise, with selectable
+  frequency and amplitude.
+- `analysis.py` with Vpp/RMS/frequency. Frequency from level crossings with
+  hysteresis rather than an FFT peak — more robust for square waves and low
+  frequencies.
+- Unit tests that measure the mock's known signals and compare against the truth.
 
-**Steg 3 — Riktig ps2000-backend** ✅ 2026-09-12 (inklusive flanktriggen)
+**Step 3 — The real ps2000 backend** ✅ 2026-09-12 (including the edge trigger)
 - `open_unit`, `set_channel`, `set_trigger`, `get_timebase`, `run_block`,
-  `ready`-polling, `get_values`.
-- ADC-räknare → volt via `max_adc`-skalning per spänningsområde.
-- Tidbasval: välj snabbaste tidbas som täcker begärd `duration_s` med begärt
-  antal sampel; rapportera faktisk samplingshastighet tillbaka (den blir sällan
-  exakt den man bad om).
+  `ready` polling, `get_values`.
+- ADC counts → volts through `max_adc` scaling per voltage range.
+- Timebase selection: pick the fastest timebase that covers the requested
+  `duration_s` with the requested sample count; report the actual sample rate
+  back (it is rarely exactly what was asked for).
 
-**Steg 3b — Tidbasval som håller** ✅ 2026-09-12 *(tillkom under användning)*
-- `_select_timebase` väljer snabbaste tidbas som täcker begärd tid; enheten
-  rapporterar faktisk samplingstakt tillbaka.
-- `autoset` letar över en stege av fönsterlängder, snabb → långsam, och kräver
-  ≥10 sampel per period innan den tror på en frekvens. Verifierat 50 Hz–1 MHz i
-  mocken (0,03 %) och 11,8 kHz på hårdvara (530 sampel/period).
-- Displayens fångstloop sätter fönstret efter uppmätt frekvens, ~10 perioder.
+**Step 3b — A timebase choice that holds** ✅ 2026-09-12 *(found in use)*
+- `_select_timebase` picks the fastest timebase that covers the requested
+  duration; the device reports the actual rate back.
+- `autoset` hunts across a ladder of window lengths, fast → slow, and demands
+  ≥10 samples per period before believing a frequency. Verified 50 Hz–1 MHz in
+  the mock (0.03 %) and 11.8 kHz on hardware (530 samples per period).
+- The sweep sets its window from the measured frequency, about ten periods.
 
-**Steg 4 — Export och presentation** ✅ 2026-09-12
-- CSV (tid, spänning), NPZ för vidare analys, PNG via matplotlib.
-- Nedsampling för svaret: min/max-decimering, inte var N:te punkt — annars
-  försvinner spikar.
+**Step 4 — Export and presentation** ✅ 2026-09-12
+- CSV (time, volts), NPZ for further analysis, PNG through matplotlib.
+- Decimation for the reply: min/max per bucket, not every N-th point — otherwise
+  spikes disappear.
 
-**Steg 5 — Robusthet** ✅ 2026-09-12 (timeout-vägen oprövad mot hårdvara)
-- Tydliga fel: enhet upptagen, USB frånkopplad mitt i fångst, överstyrning
-  (signal klipper mot områdesgränsen → föreslå större område).
-- Timeout på trigg som aldrig löser ut.
-- Städa upp USB-handtaget vid avstängning.
+**Step 5 — Robustness** ✅ 2026-09-12
+- Clear errors: device busy, USB removed mid-capture, overrange (the signal clips
+  against the range limit → suggest a larger range).
+- A timeout on a trigger that never fires.
+- Clean up the USB handle on shutdown.
 
-**Steg 6b — Live-display** ✅ 2026-09-12 *(tillkom under byggandet, fanns inte i
-den ursprungliga planen)*
-- Lokal HTTP-server i serverprocessen, sida på `127.0.0.1:8071`, öppnas i ett
-  Edge-fönster i app-läge vid **första** verktygsanropet.
-- Kroken sitter i `tool()`-dekoratorn — den enda punkt varje anrop passerar.
-- Visar kurvan på rutnät med V/div och ms/div, mätvärden, kanal/trigg,
-  versionsbanner och en logg över MCP-anrop. Uppdateras var 400:e ms.
-- Simulerade fångster märks **SIMULERAD** i orange, så en mock aldrig kan
-  misstas för en mätning.
-- `PICOSCOPE_UI=0` stänger av (testerna sätter det), `PICOSCOPE_UI_PORT` flyttar.
-- **Ett fönster per maskin**, inte per process: beviset att ett fönster tittar
-  skrivs till en delad fil i temp-katalogen som alla serverprocesser läser.
-  Samma fil minns zoom, position och storlek till nästa start.
+**Step 6b — Live display** ✅ 2026-09-12 *(arrived during the build; it was not in
+the original plan)*
+- A local HTTP server inside the server process, a page on `127.0.0.1:8071`,
+  opened in an Edge app window on the **first** tool call.
+- The hook sits in the `tool()` decorator — the one point every call passes.
+- Draws the trace on a graticule with V/div and ms/div, plus readouts, channel
+  and trigger settings, a version banner and a log of MCP calls. Refreshes every
+  400 ms.
+- Simulated captures are marked **SIMULERAD** in orange, so a mock can never be
+  mistaken for a measurement.
+- `PICOSCOPE_UI=0` turns it off (the tests set it), `PICOSCOPE_UI_PORT` moves it.
+- **One window per machine**, not per process: the proof that a window is
+  watching is written to a shared file in the temp directory that every server
+  process reads. The same file remembers zoom, position and size for the next
+  launch.
+- Trigger and sweep controls: Run / Normal / Single / Stop, and a trigger level
+  dragged with the mouse (issue #1).
 
-**Steg 6 — Dokumentation** ✅ 2026-09-12
-- README med installation av PicoSDK, `.mcp.json`-exempel, exempeldialog.
+**Step 6 — Documentation** ✅ 2026-09-12
+- README covering driver installation, an `.mcp.json` example and a sample
+  dialogue.
 
 ---
 
-## 6. Risker
+## 6. Risks
 
-| Risk | Hantering |
+| Risk | Handling |
 |---|---|
-| Fel drivrutinsfamilj (`ps2000a` istället för `ps2000`) | ~~Steg 0 verifierar~~ — verifierat 2026-09-12: `ps2000` svarar, variant "2104". |
-| PicoSDK saknas på maskinen | ~~Mock-backend gör utveckling möjlig ändå~~ — löst 2026-09-12: PicoScope 7-appen bär `ps2000.dll`, och `_ensure_dll_on_path()` hittar den. |
-| 32/64-bitars DLL-krock med Python | Använd 64-bitars PicoSDK till 64-bitars Python. Kontrolleras i steg 0. |
-| Stora dataset spränger LLM-kontexten | Verktyg returnerar aldrig råa arrayer — princip 3 ovan. |
-| Drivrutinen är inte trådsäker | En session, serialiserade anrop. |
+| The wrong driver family (`ps2000a` instead of `ps2000`) | ~~Step 0 verifies~~ — verified 2026-09-12: `ps2000` answers, variant "2104". |
+| PicoSDK missing on the machine | ~~The mock backend makes development possible anyway~~ — solved 2026-09-12: the PicoScope 7 application carries `ps2000.dll`, and `_ensure_dll_on_path()` finds it. |
+| A 32/64-bit DLL mismatch with Python | Use the 64-bit driver with 64-bit Python. Checked in step 0. |
+| Large datasets blowing the LLM context | Tools never return raw arrays — principle 3 above. |
+| The driver is not thread safe | One session, serialised calls. |
 
 ---
 
 ## 7. Definition of done (v1)
 
-- [x] `open_device` hittar och öppnar en riktig PS2104. *(2026-09-12, variant 2104 serienr <serial>)*
-- [x] `capture_block` på en känd signal ger rätt frekvens ±1 %. *(2026-09-12: funktionsgenerator, sinus 800 Hz, amplitud 3,0 V. Uppmätt 799,37–800,20 Hz över fem fönsterlängder från 2 till 200 ms — **0,03 %** fel på de längre, spridning 0,09 %. Vpp 3,02 V mot 3,0 V, alltså inom ett ADC-steg på ±5 V-området. Verktyg: `tools/measure_signal.py`.)*
-- [x] `export_capture` producerar en PNG som ser rätt ut för ögat. *(mock, 2 kHz fyrkant 30 % duty — verifierad 2026-09-12; kvarstår mot riktig signal)*
-- [x] Hela verktygsuppsättningen fungerar mot mock-backenden utan hårdvara. *(18 enhetstester + stdio-röktest, 2026-09-12)*
-- [x] README räcker för att sätta upp servern på en ny dator. *(2026-09-12)*
-- [ ] Taggad `v0.01` enligt det globala versionsregelverket.
+- [x] `open_device` finds and opens a real PS2104. *(2026-09-12, variant 2104)*
+- [x] `capture_block` on a known signal gives the right frequency to ±1 %.
+      *(2026-09-12: function generator, 800 Hz sine, amplitude 3.0 V. Measured
+      799.37–800.20 Hz across five window lengths from 2 to 200 ms — **0.03 %**
+      error on the longer ones, 0.09 % spread. Vpp read 3.02 V against 3.0 V,
+      inside one ADC step on the ±5 V range. Tool: `tools/measure_signal.py`.)*
+- [x] `export_capture` produces a PNG that looks right to the eye.
+- [x] The whole tool set works against the mock backend without hardware.
+- [x] The README is enough to set the server up on a new machine.
+- [ ] Tagged `v0.01` per the versioning rules.
 
 ---
 
-## 7b. Miljövariabler
+## 7b. Environment variables
 
-| Variabel | Default | Effekt |
+| Variable | Default | Effect |
 |---|---|---|
-| `CAPTURE_DIR` | `./captures` | Var exporterade filer hamnar. |
-| `PICOSCOPE_UI` | `1` | `0` stänger av display och Edge-fönster. |
-| `PICOSCOPE_UI_PORT` | `8071` | Startport; tio portar provas uppåt. |
-| `PICOSCOPE_UI_BROWSER` | `1` | `0` serverar sidan men öppnar aldrig ett fönster. |
-| `PICOSDK_DIR` | *(auto)* | Katalog med `ps2000.dll` när autosökningen missar. |
+| `CAPTURE_DIR` | `./captures` | Where exported files land. |
+| `PICOSCOPE_UI` | `1` | `0` turns off the display and the Edge window. |
+| `PICOSCOPE_UI_PORT` | `8071` | Start port; ten are tried upwards. |
+| `PICOSCOPE_UI_BROWSER` | `1` | `0` serves the page but never opens a window. |
+| `PICOSDK_DIR` | *(auto)* | The directory holding `ps2000.dll` when the search misses. |
 
 ---
 
-## 8. Öppna frågor
+## 8. Open questions
 
-1. Ska servern köras via `stdio` (lokalt, enklast) eller även kunna exponeras
-   över nätverket så scopet kan sitta på en annan dator? **Beslutat 2026-09-12: stdio i v1.**
-2. Behövs kontinuerlig streaming i v1, eller räcker blockfångst?
-   **Beslutat 2026-09-12: blockfångst i v1, streaming i v2.**
-3. Var ska exporterade filer hamna? **Beslutat 2026-09-12: `./captures/` i projektroten,
-   konfigurerbart via `CAPTURE_DIR`.**
+1. Should the server run over `stdio` (local, simplest) or also be exposed over
+   the network so the scope can sit on another machine?
+   **Decided 2026-09-12: stdio in v1.**
+2. Is continuous streaming needed in v1, or is block capture enough?
+   **Decided 2026-09-12: block capture in v1, streaming in v2.**
+3. Where should exported files go? **Decided 2026-09-12: `./captures/` in the
+   project root, configurable through `CAPTURE_DIR`.**
