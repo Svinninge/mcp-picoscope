@@ -1,4 +1,4 @@
-# File version: v0.01
+# File version: v0.02
 """Local scope display, opened in an Edge app window when the server is used.
 
 The MCP session sees numbers; a person wants to see the waveform. This serves
@@ -10,9 +10,14 @@ ScopeSession the tools write, and can never drive the hardware. A display that
 could also push buttons would need the session lock and a permission story;
 this needs neither.
 
-The window opens ONCE per server process. Opening it per tool call would mean a
-new window every few seconds. Set PICOSCOPE_UI=0 to disable it entirely — the
-test suite does, and so should anything running unattended.
+One window, not one per call. The page polls /state continuously, so a recent
+poll IS the proof that a window is already watching: no launch then. When the
+window is closed the polls stop, and the next tool call brings it back. A
+process-lifetime flag could not do that — it would leave you with no display
+for the rest of the session the moment you closed the window once.
+
+Set PICOSCOPE_UI=0 to disable it entirely — the test suite does, and so should
+anything running unattended.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,6 +50,14 @@ PORT_ENV = "PICOSCOPE_UI_PORT"
 UI_CURVE_POINTS = 1600
 ACTIVITY_MAX = 60
 
+# A poll this recent means a window is open and watching. The page polls every
+# 400 ms, so this tolerates a dozen missed polls — a page that is merely busy
+# or throttled in a background tab must not be mistaken for a closed window.
+VIEWER_TIMEOUT_S = 6.0
+# Edge needs a moment to start and load the page before its first poll. Without
+# a cooldown, the tool calls in that gap would each launch another window.
+LAUNCH_COOLDOWN_S = 15.0
+
 PAGE = Path(__file__).with_name("ui.html")
 
 EDGE_CANDIDATES = (
@@ -56,7 +70,8 @@ _state_lock = threading.Lock()
 _server: ThreadingHTTPServer | None = None
 _session: Any = None
 _url: str | None = None
-_opened = False
+_last_poll = 0.0
+_last_launch = 0.0
 
 
 def enabled() -> bool:
@@ -75,20 +90,28 @@ def record(tool: str, status: str, detail: str = "") -> None:
     )
 
 
+def viewer_present() -> bool:
+    """True when a page polled us recently — i.e. a window is open."""
+    return (time.monotonic() - _last_poll) < VIEWER_TIMEOUT_S
+
+
 def ensure_started(session: Any) -> str | None:
-    """Start the UI server and open the window, at most once. Returns the URL.
+    """Start the UI server, and open a window only if none is watching.
 
     Failing to show a window must never fail a measurement, so every error here
     is logged and swallowed.
     """
-    global _opened
+    global _last_launch
     if not enabled():
         return None
     try:
         url = _ensure_server(session)
-        if url and not _opened:
-            _opened = True
-            _open_edge(url)
+        if url is None or viewer_present():
+            return url
+        if time.monotonic() - _last_launch < LAUNCH_COOLDOWN_S:
+            return url  # one is already on its way up
+        _last_launch = time.monotonic()
+        _open_edge(url)
         return url
     except Exception:  # noqa: BLE001 - the UI is never worth a failed tool call
         log.exception("could not start the UI")
@@ -99,19 +122,29 @@ def url() -> str | None:
     return _url
 
 
-def reopen(target: str) -> None:
-    """Open another window on demand, bypassing the once-per-process guard."""
+def reopen(target: str, force: bool = False) -> bool:
+    """Bring up a window on demand. Returns True if one was launched.
+
+    Without `force` this still respects a window that is already watching —
+    "show me the display" should not mean "give me a second copy of it".
+    """
+    global _last_launch
+    if viewer_present() and not force:
+        return False
+    _last_launch = time.monotonic()
     _open_edge(target)
+    return True
 
 
 def stop() -> None:
-    global _server, _url, _opened
+    global _server, _url, _last_poll, _last_launch
     if _server is not None:
         _server.shutdown()
         _server.server_close()
         _server = None
     _url = None
-    _opened = False
+    _last_poll = 0.0
+    _last_launch = 0.0
 
 
 def _ensure_server(session: Any) -> str | None:
@@ -123,10 +156,9 @@ def _ensure_server(session: Any) -> str | None:
         port = int(os.environ.get(PORT_ENV, DEFAULT_PORT))
         for candidate in range(port, port + PORT_ATTEMPTS):
             try:
-                _server = ThreadingHTTPServer(("127.0.0.1", candidate), _Handler)
+                _server = _Server(("127.0.0.1", candidate), _Handler)
             except OSError:
-                continue  # port taken, most likely an older session of ours
-            _server.daemon_threads = True
+                continue  # port taken — another session of ours owns it
             threading.Thread(
                 target=_server.serve_forever, name="picoscope-ui", daemon=True
             ).start()
@@ -156,7 +188,10 @@ def _open_edge(target: str) -> None:
         log.warning("Edge not found; open %s yourself", target)
         return
     subprocess.Popen(
-        [edge, f"--app={target}", "--window-size=1280,860"],
+        # Modest default size: this machine runs Windows at 300 % scaling, where
+        # a "normal" window fills the screen. The page carries its own zoom and
+        # remembers it, so the user only sets this once.
+        [edge, f"--app={target}", "--window-size=1000,680"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         # Detach: the window must outlive a single tool call, and must not hold
@@ -193,6 +228,21 @@ def _ui_state() -> dict:
     return state
 
 
+class _Server(ThreadingHTTPServer):
+    """HTTP server that refuses to share its port.
+
+    ThreadingHTTPServer sets allow_reuse_address, which on Windows means
+    SO_REUSEADDR — and there that does not merely permit rebinding a socket in
+    TIME_WAIT, it lets a second process HIJACK a live listener. Two sessions
+    then both "own" 8071, connections land on whichever socket wins the race,
+    and the window you opened shows another session's scope. Refusing reuse
+    makes the bind fail honestly so the port scan moves to the next one.
+    """
+
+    allow_reuse_address = False
+    daemon_threads = True
+
+
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -201,6 +251,8 @@ class _Handler(BaseHTTPRequestHandler):
         if route == "/":
             self._send(PAGE.read_bytes(), "text/html; charset=utf-8")
         elif route == "/state":
+            global _last_poll
+            _last_poll = time.monotonic()  # proof that a window is watching
             body = json.dumps(_ui_state()).encode("utf-8")
             self._send(body, "application/json", cache=False)
         else:

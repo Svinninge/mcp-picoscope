@@ -42,8 +42,6 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   missvisande; det borde säga vilket.
 - 🟢 **Displayen visar bara senaste fångsten.** Fångstlistan finns i state men
   ritas inte — en klickbar historik vore billig.
-- 🟢 **Fönstret återöppnas inte av sig själv om man stänger det.** `open_ui()`
-  finns, men servern märker inte att fönstret är borta.
 
 - 🟡 **`capture_streaming(duration_s, rate)`** — finns i PLAN.md §4 men är inte
   byggd; planens §8 föreslår block i v1 och streaming i v2. Skriv den när
@@ -82,6 +80,14 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
   `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
   `_timebase_limits`; rättat.
+- **2026-09-12 — Displayen skalbar, och ett fönster i stället för flera.**
+  Zoomknappar (40–200 %, sparas i webbläsaren) plus brytpunkter som fäller ihop
+  layouten ned till ~320×260. Fönsterstarten styrs nu av om sidan pollat de
+  senaste 6 sekunderna, inte av en process-flagga — mätt 67 anrop → 1 fönster,
+  och ett stängt fönster kommer tillbaka vid nästa anrop. Två buggar på vägen:
+  UI-servern kunde **kapa** en annan sessions port på Windows
+  (`allow_reuse_address`), och kurvan ritades fel under zoom eftersom
+  `getBoundingClientRect()` och `clientHeight` inte mäter samma sak.
 - **2026-09-12 — Live-display i Edge.** `ui.py` + `ui.html`: lokal server på
   8071, kurva med rutnät och V/div, mätvärden, kanal/trigg och en logg över
   MCP-anrop. Öppnas automatiskt i ett Edge-fönster vid första verktygsanropet

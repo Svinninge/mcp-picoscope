@@ -78,13 +78,30 @@ Picos katalog där. `_ensure_dll_on_path()` i `backends/ps2000.py` gör det, med
 `SDK\lib` utan i `PicoScope 7 T&M Stable\`, eftersom appen installerades i
 stället för SDK:n; båda fungerar.
 
-**UI:t öppnas en gång per serverprocess, inte per anrop.** Kroken sitter i
-`tool()`-dekoratorn eftersom varje verktygsanrop redan passerar den — men
-`_opened`-flaggan gör att Edge startas första gången, inte var tredje sekund.
+**Ett fönster, inte ett per anrop.** Kroken sitter i `tool()`-dekoratorn
+eftersom varje verktygsanrop redan passerar den. Att sidan **pollat nyligen** är
+beviset på att ett fönster redan tittar (`viewer_present()`, 6 s) — då startas
+inget nytt. Stänger du fönstret slutar pollarna och nästa verktygsanrop tar
+tillbaka det. En process-livstidsflagga kunde inte det: stängde du fönstret en
+gång var displayen borta resten av sessionen. Mätt: 67 verktygsanrop → 1 fönster.
 `PICOSCOPE_UI=0` stänger av alltihop; testerna sätter det, och allt som körs
 obevakat bör göra detsamma. Sidan **läser** sessionen och kan aldrig styra
 hårdvaran — ett UI som också kunde trycka på knappar hade behövt sessionslåset
 och en behörighetsfråga.
+
+**Två servrar kan kapa samma port på Windows.** `HTTPServer` sätter
+`allow_reuse_address`, och `SO_REUSEADDR` betyder inte samma sak på Windows som
+på Unix: där får en ny socket **ta över** en levande lyssnare. Två sessioner
+"ägde" 8071 samtidigt och anslutningarna landade på den som vann kapplöpningen,
+så fönstret visade en annan sessions scope. `_Server.allow_reuse_address = False`
+gör att bindningen misslyckas ärligt och portskanningen går vidare till 8072.
+
+**CSS-zoom: mät på ett ställe.** `getBoundingClientRect()` är zoom-skalad,
+`clientWidth`/`clientHeight` är det inte. Att mäta canvasen med den ena och rita
+med den andra sträcker kurvan och flyttar nollinjen från mitten. `fit()` mäter
+en gång till `viewW`/`viewH`, `draw()` använder bara dem. Av samma skäl sätts
+body-höjden i skript: `100vh` räknas *före* zoomen, så vid 70 % blir sidan 1/0,7
+gånger för hög.
 
 **En `<canvas>` i en flexkolumn växer av sig själv.** Att skriva `canvas.height`
 sätter elementets *intrinsic* storlek, så en `flex: 1`-canvas trycker ut resten

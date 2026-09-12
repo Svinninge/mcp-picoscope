@@ -182,11 +182,12 @@ def get_server_info() -> dict:
 
 
 @tool
-def open_ui() -> dict:
-    """Re-open the live display in an Edge window and return its URL.
+def open_ui(force: bool = False) -> dict:
+    """Show the live display and return its URL.
 
-    The window opens by itself on the first tool call; use this when it was
-    closed, or to bring a second one up on another screen.
+    A window opens by itself when one is needed, so this is for bringing it
+    back after you closed it. It reuses the window that is already watching;
+    pass force=true to open a second one, for another screen.
     """
     if not ui.enabled():
         raise ScopeError(
@@ -199,8 +200,16 @@ def open_ui() -> dict:
             "The display server could not start — no free port was available. "
             f"Set {ui.PORT_ENV} to pick another one."
         )
-    ui.reopen(target)
-    return {"url": target}
+    launched = ui.reopen(target, force=force)
+    return {
+        "url": target,
+        "launched": launched,
+        "note": (
+            "Opened a new window."
+            if launched
+            else "A window is already showing the display; reused it."
+        ),
+    }
 
 
 # -- configuration --------------------------------------------------------

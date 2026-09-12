@@ -80,7 +80,7 @@ process i taget.
 | `open_device(backend)` | `auto` \| `ps2000` \| `mock`. `auto` faller tillbaka på mocken med tydlig varning. |
 | `close_device()` | Stäng och släpp USB-enheten. |
 | `get_device_info()` | Modell, serienr, drivrutin, kanaler, spänningsområden, gränser. |
-| `get_server_info()` | Serverversion och exportkatalog. |
+| `get_server_info()` | Version (`System vX.YY \| Deploy vX.YY`), exportkatalog och displayens URL. |
 | `configure_channel(range_v, coupling, enabled)` | Kanal A. Enheten snäpper till närmaste område och svarar vilket. |
 | `configure_trigger(mode, threshold_v, direction, delay_pct, auto_trigger_ms)` | Auto eller flanktrigg. |
 | `configure_mock_signal(...)` | Vad mocken genererar: sine, square, ramp, triangle, noise, dc. |
@@ -88,8 +88,7 @@ process i taget.
 | `measure(capture_id)` | Vpp, Vmin/Vmax, medel, RMS, frekvens, periodtid, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → sökväg. |
 | `autoset()` | Väljer område och tidbas som visar signalen — AutoSetup-knappen. |
-
-| `open_ui()` | Öppnar den levande displayen i ett Edge-fönster igen. |
+| `open_ui(force)` | Visar displayen; återanvänder fönstret som redan tittar. `force=true` ger ett extra. |
 
 **Resurs:** `picoscope://state` — backend, enhet, kanal, trigg och hållna fångster.
 
@@ -106,6 +105,17 @@ Den uppdateras var 400:e ms.
 Sidan **läser** bara: den kan inte styra scopet, och en simulerad signal märks
 med en orange **SIMULERAD**-flagga så att en mock aldrig kan misstas för en
 mätning.
+
+**Ett fönster.** Att sidan pollar är beviset på att ett fönster redan tittar, så
+fler verktygsanrop öppnar inget nytt. Stänger du det kommer det tillbaka vid
+nästa anrop. `open_ui(force=true)` ger ett extra fönster till en annan skärm.
+
+**Skalbar.** Knapparna −/100 %/+ i huvudet zoomar hela sidan (40–200 %) och
+valet kommer ihåg sig i webbläsaren — användbart på en 300 %-skalad
+Windows-display, där ett "normalt" fönster fyller skärmen. Layouten fäller ihop
+sig efter fönstrets storlek och tappar det minst värdefulla först: först
+aktivitetsloggen, sedan inställningspanelen, sedan de sekundära mätvärdena.
+Kurvan och dess V/div är sist kvar — en kurva utan skala är ingen mätning.
 
 | Miljövariabel | Effekt |
 |---|---|
@@ -150,8 +160,8 @@ Mot riktig hårdvara, körbara var för sig:
 
 ```powershell
 .\.venv\Scripts\python.exe tools\step0_verify.py        # variant, områden, timebase-tabell
-.\.venv\Scripts\python.exe toolserify_volt_scale.py   # skalan mot en känd spänning
-.\.venv\Scripts\python.exe toolserify_zero.py         # offset, kortsluten ingång
+.\.venv\Scripts\python.exe tools\verify_volt_scale.py   # skalan mot en känd spänning
+.\.venv\Scripts\python.exe tools\verify_zero.py         # offset, kortsluten ingång
 ```
 
 Arbetsregler och fallgropar: [SOUL.md](SOUL.md), [CLAUDE.md](CLAUDE.md),

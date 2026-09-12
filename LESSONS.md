@@ -8,6 +8,15 @@ Format: en rubrik med datum, 1–2 meningar med regeln och kontexten som gav den
 
 ---
 
+## 2026-09-12 — Skriv aldrig Windows-sökvägar med backslash-escape i ett heredoc-skript
+
+`"tools\verify_zero.py"` i en icke-rå Python-sträng blev `tools` + vertikaltab +
+`erify_zero.py` i README — ett dokumenterat kommando som inte gick att köra. Värre
+var att **rättningen misslyckades tyst** flera gånger: strängen jag sökte med bar
+samma escape-problem, så `replace()` matchade inget medan `in` såg ut att hitta.
+Bygg sådana rader ur `chr()`/råsträngar, eller skriv om hela raden i stället för
+att patcha den, och **läs alltid tillbaka filen** för att se att ändringen tog.
+
 ## 2026-09-12 — Ett hårdvarutest som får falla tillbaka på mocken testar ingenting
 
 `open_device(backend="auto")` faller tillbaka på mocken när hårdvaran saknas —

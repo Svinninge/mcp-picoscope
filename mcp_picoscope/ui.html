@@ -1,71 +1,117 @@
 <!doctype html>
-<!-- File version: v0.02 -->
+<!-- File version: v0.05 -->
 <html lang="sv">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PicoScope</title>
 <style>
+  /* The page is read on a 300 %-scaled Windows display, so nothing here is
+     sized in absolute pixels that assume a desktop-sized window. Two mechanisms
+     carry that: a user-set zoom (remembered per browser) and breakpoints that
+     drop the lowest-value content first as the window shrinks. */
   :root {
     --bg: #0d1117; --panel: #151b23; --line: #2a3441;
     --ink: #e6edf3; --dim: #8b98a5; --trace: #3fe08f;
     --warn: #f0a13a; --bad: #f05a5a; --ok: #3fe08f;
+    --pad: 12px; --gap: 10px;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font: 14px/1.5 "Segoe UI", system-ui, sans-serif;
-    display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr;
-    height: 100vh; gap: 1px; background: var(--line);
+    margin: 0; background: var(--line); color: var(--ink);
+    font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+    display: grid;
+    grid-template-columns: 1fr minmax(220px, 300px);
+    grid-template-rows: auto 1fr;
+    /* Height is set in script, not as 100vh: vh units are measured before the
+       zoom is applied, so at 70 % the page would lay out 1/0.7 times too tall —
+       empty space below the fold, and the trace's zero line pushed off centre
+       because the canvas wrapper extends past the visible area. */
+    height: 100vh; gap: 1px;
   }
   header {
     grid-column: 1 / -1; background: var(--panel);
-    display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px var(--pad); flex-wrap: nowrap; overflow: hidden;
   }
-  h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  h1 { font-size: 14px; margin: 0; font-weight: 600; white-space: nowrap; }
   .pill {
-    font-size: 12px; padding: 2px 10px; border-radius: 999px;
+    font-size: 11px; padding: 1px 8px; border-radius: 999px; white-space: nowrap;
     border: 1px solid var(--line); color: var(--dim);
   }
   .pill.live { color: var(--ok); border-color: var(--ok); }
   .pill.sim { color: var(--warn); border-color: var(--warn); }
   .pill.off { color: var(--bad); border-color: var(--bad); }
-  .spacer { flex: 1; }
-  main {
-    background: var(--bg); padding: 14px; display: flex; flex-direction: column;
-    gap: 12px; min-width: 0; min-height: 0; overflow: hidden;
+  .spacer { flex: 1 1 auto; min-width: 0; }
+  .zoom { display: flex; gap: 2px; flex: 0 0 auto; }
+  .zoom button {
+    background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 4px; width: 24px; height: 22px; cursor: pointer;
+    font-size: 13px; line-height: 1; padding: 0;
   }
-  /* The canvas gets its size from this wrapper, never the other way round:
+  .zoom button:hover { border-color: var(--dim); }
+  .zoom button.wide { width: auto; padding: 0 7px; font-size: 11px; }
+
+  main {
+    background: var(--bg); padding: var(--pad); display: flex;
+    flex-direction: column; gap: var(--gap); min-width: 0; min-height: 0;
+    overflow: hidden;
+  }
+  /* The canvas takes its size from this wrapper, never the other way round:
      writing canvas.height sets the element's intrinsic size, and a bare
-     flex:1 canvas then grows the column on every resize until the readouts
-     are pushed off screen. */
-  .screenwrap { flex: 1; min-height: 0; position: relative; }
+     flex:1 canvas then grows the column on every resize until the readouts are
+     pushed off screen. */
+  .screenwrap { flex: 1 1 auto; min-height: 80px; position: relative; }
   #screen {
     position: absolute; inset: 0; width: 100%; height: 100%; display: block;
     background: #070b10; border: 1px solid var(--line); border-radius: 4px;
   }
-  .readouts { display: flex; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
-  .divs { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .divs { color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .readouts { display: flex; flex-wrap: wrap; gap: 6px; flex: 0 0 auto; }
   .readout {
     background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
-    padding: 6px 12px; min-width: 104px;
+    padding: 4px 9px; min-width: 88px; flex: 1 1 auto;
   }
-  .readout .k { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .4px; }
-  .readout .v { font-size: 17px; font-variant-numeric: tabular-nums; }
-  aside { background: var(--panel); padding: 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+  .readout .k {
+    font-size: 10px; color: var(--dim); text-transform: uppercase;
+    letter-spacing: .4px; white-space: nowrap;
+  }
+  .readout .v { font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  aside {
+    background: var(--panel); padding: var(--pad); overflow: auto;
+    display: flex; flex-direction: column; gap: 14px; min-width: 0;
+  }
+  section { min-width: 0; }
   section h2 {
-    font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
-    color: var(--dim); margin: 0 0 6px; font-weight: 600;
+    font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--dim); margin: 0 0 4px; font-weight: 600;
   }
-  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; font-size: 13px; }
-  dt { color: var(--dim); }
-  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .note { color: var(--warn); font-size: 12px; margin-top: 8px; }
-  ul { list-style: none; margin: 0; padding: 0; font-size: 12px; }
-  li { display: flex; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 1px 8px; margin: 0; font-size: 12px; }
+  dt { color: var(--dim); white-space: nowrap; }
+  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .note { color: var(--warn); font-size: 11px; flex: 0 0 auto; }
+  ul { list-style: none; margin: 0; padding: 0; font-size: 11px; }
+  li { display: flex; gap: 6px; padding: 2px 0; border-bottom: 1px solid var(--line); }
   li .t { color: var(--dim); font-variant-numeric: tabular-nums; }
-  li .n { flex: 1; }
+  li .n { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   li.err .n { color: var(--bad); }
   .empty { color: var(--dim); font-style: italic; }
+
+  /* Shrinking order, lowest value first: the activity log, then the settings
+     panel, then the secondary readouts. The trace and the range it was taken
+     on are the last things to go, because a curve without its scale is not a
+     measurement. */
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+    aside { flex-direction: row; flex-wrap: wrap; gap: 16px; max-height: 34vh; }
+    #device, #version { display: none; }
+  }
+  @media (max-width: 560px) { #activity-section { display: none; } }
+  @media (max-width: 440px) { .readout.p3 { display: none; } }
+  @media (max-width: 340px) { .readout.p2, aside { display: none; } }
+  @media (max-height: 460px) { .divs { display: none; } .readout .v { font-size: 14px; } }
+  @media (max-height: 340px) { .readouts { display: none; } }
 </style>
 </head>
 <body>
@@ -76,11 +122,17 @@
   <div class="spacer"></div>
   <span class="pill" id="version">—</span>
   <span class="pill" id="clock">—</span>
+  <div class="zoom">
+    <button id="zoom-out" title="Mindre (Ctrl+-)">−</button>
+    <button id="zoom-reset" class="wide" title="Återställ zoom">100%</button>
+    <button id="zoom-in" title="Större (Ctrl++)">+</button>
+  </div>
 </header>
 
 <main>
   <div class="screenwrap"><canvas id="screen"></canvas></div>
   <div class="divs" id="divs">—</div>
+  <div class="note" id="capnote"></div>
   <div class="readouts" id="readouts"></div>
 </main>
 
@@ -93,7 +145,7 @@
     <h2>Trigg</h2>
     <dl id="trigger"></dl>
   </section>
-  <section>
+  <section id="activity-section">
     <h2>MCP-aktivitet</h2>
     <ul id="activity"><li class="empty">väntar på anrop…</li></ul>
   </section>
@@ -105,17 +157,75 @@ const canvas = document.getElementById("screen");
 const ctx = canvas.getContext("2d");
 let latest = null;
 
+// -- zoom -----------------------------------------------------------------
+// The host display runs at 300 % scaling, so the browser's own idea of a
+// comfortable size is three times too big for a glanceable window. This scales
+// the whole page and remembers the choice per browser; the canvas backing
+// store follows, or the trace would go soft at anything but 100 %.
+const SCALE_KEY = "picoscope-ui-scale";
+const SCALE_MIN = 0.4, SCALE_MAX = 2.0, SCALE_STEP = 0.1;
+let scale = 1;
+
+function readScale() {
+  try {
+    const v = parseFloat(localStorage.getItem(SCALE_KEY));
+    return Number.isFinite(v) ? Math.min(SCALE_MAX, Math.max(SCALE_MIN, v)) : 1;
+  } catch (e) { return 1; }
+}
+
+function sizeToViewport() {
+  // innerHeight is in unzoomed CSS pixels; dividing by the zoom gives the
+  // height the body must claim to cover exactly one screen after scaling.
+  document.body.style.height = (window.innerHeight / scale) + "px";
+  document.body.style.width = (window.innerWidth / scale) + "px";
+}
+
+function applyScale(next) {
+  scale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(next * 100) / 100));
+  document.documentElement.style.zoom = scale;
+  document.getElementById("zoom-reset").textContent = Math.round(scale * 100) + "%";
+  try { localStorage.setItem(SCALE_KEY, String(scale)); } catch (e) { /* private mode */ }
+  sizeToViewport();
+  fit();
+}
+
+window.addEventListener("resize", () => { sizeToViewport(); fit(); });
+
+document.getElementById("zoom-out").onclick = () => applyScale(scale - SCALE_STEP);
+document.getElementById("zoom-in").onclick = () => applyScale(scale + SCALE_STEP);
+document.getElementById("zoom-reset").onclick = () => applyScale(1);
+
+// -- drawing --------------------------------------------------------------
+
+// Logical drawing size, measured in fit() and reused by draw(). Under CSS zoom
+// getBoundingClientRect() and clientWidth do NOT agree — one is scaled by the
+// zoom and the other is not — so measuring in one place and drawing with the
+// other stretches the trace and pushes its zero line off centre. One source.
+let viewW = 0, viewH = 0;
+
 function fit() {
-  const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-  canvas.width = r.width * dpr;
-  canvas.height = r.height * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const r = canvas.getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  viewW = r.width / scale;
+  viewH = r.height / scale;
+  // getBoundingClientRect is in zoomed CSS pixels; multiply the device ratio by
+  // the zoom so the backing store matches the physical pixels on screen.
+  // rect is already zoom-scaled, so the backing store only needs the device
+  // ratio on top of it; the transform then works in unzoomed logical units.
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(r.width * dpr);
+  canvas.height = Math.round(r.height * dpr);
+  const k = dpr * scale;
+  ctx.setTransform(k, 0, 0, k, 0, 0);
   draw();
 }
-window.addEventListener("resize", fit);
+// Layout changes at a breakpoint without the window itself resizing, so watch
+// the element rather than the window.
+new ResizeObserver(fit).observe(document.querySelector(".screenwrap"));
 
 function draw() {
-  const w = canvas.clientWidth, h = canvas.clientHeight;
+  const w = viewW, h = viewH;
+  if (!w || !h) return;
   ctx.clearRect(0, 0, w, h);
   ctx.strokeStyle = "#1c2531";
   ctx.lineWidth = 1;
@@ -134,8 +244,8 @@ function draw() {
 
   if (!latest || !latest.curve || latest.curve.length < 2) {
     ctx.fillStyle = "#8b98a5";
-    ctx.font = "13px 'Segoe UI', sans-serif";
-    ctx.fillText("ingen fångst än", 14, 24);
+    ctx.font = "12px 'Segoe UI', sans-serif";
+    ctx.fillText("ingen fångst än", 10, 18);
     return;
   }
   // Full scale is the selected range, so the trace sits where it would on the
@@ -143,7 +253,7 @@ function draw() {
   const range = latest.measurements.range_v;
   const span = latest.measurements.duration_s || 1;
   ctx.strokeStyle = "#3fe08f";
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.3;
   ctx.beginPath();
   latest.curve.forEach(([t, v], i) => {
     const x = (t / span) * w;
@@ -152,6 +262,8 @@ function draw() {
   });
   ctx.stroke();
 }
+
+// -- readouts -------------------------------------------------------------
 
 const fmt = (v, unit, digits = 4) =>
   v === null || v === undefined ? "—" : `${Number(v).toPrecision(digits)} ${unit}`;
@@ -164,15 +276,20 @@ function eng(hz) {
 }
 
 function readouts(m) {
+  // p1 survives every window size, p3 goes first.
   const cells = [
-    ["Vpp", fmt(m.vpp_v, "V")], ["Vmin", fmt(m.vmin_v, "V")],
-    ["Vmax", fmt(m.vmax_v, "V")], ["Medel", fmt(m.mean_v, "V")],
-    ["RMS", fmt(m.rms_v, "V")], ["Frekvens", eng(m.frequency_hz)],
-    ["Duty", m.duty_cycle_pct == null ? "—" : m.duty_cycle_pct.toFixed(1) + " %"],
-    ["Samplingstakt", eng(m.sample_rate_hz).replace("Hz", "S/s")],
+    ["p1", "Vpp", fmt(m.vpp_v, "V")],
+    ["p1", "Frekvens", eng(m.frequency_hz)],
+    ["p2", "Vmin", fmt(m.vmin_v, "V")],
+    ["p2", "Vmax", fmt(m.vmax_v, "V")],
+    ["p2", "Medel", fmt(m.mean_v, "V")],
+    ["p3", "RMS", fmt(m.rms_v, "V")],
+    ["p3", "Duty", m.duty_cycle_pct == null ? "—" : m.duty_cycle_pct.toFixed(1) + " %"],
+    ["p3", "Samplingstakt", eng(m.sample_rate_hz).replace("Hz", "S/s")],
   ];
   document.getElementById("readouts").innerHTML = cells
-    .map(([k, v]) => `<div class="readout"><div class="k">${k}</div><div class="v">${v}</div></div>`)
+    .map(([p, k, v]) =>
+      `<div class="readout ${p}"><div class="k">${k}</div><div class="v">${v}</div></div>`)
     .join("");
 }
 
@@ -227,22 +344,14 @@ async function poll() {
     const perDiv = m.duration_s / GRID_X;
     document.getElementById("divs").textContent =
       `${(m.range_v / (GRID_Y / 2)).toPrecision(3)} V/div · ` +
-      `${eng(1 / perDiv).replace(" Hz", "")} → ` +
       `${(perDiv * 1e3).toPrecision(3)} ms/div · ${m.samples} sampel · ` +
       `${s.latest.capture_id}`;
+    document.getElementById("capnote").textContent = m.note || "";
     draw();
-    const note = s.latest.measurements.note;
-    let el = document.getElementById("capnote");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "capnote"; el.className = "note";
-      document.querySelector("main").appendChild(el);
-    }
-    el.textContent = note || "";
   }
 }
 
-fit();
+applyScale(readScale());
 poll();
 setInterval(poll, 400);
 </script>
