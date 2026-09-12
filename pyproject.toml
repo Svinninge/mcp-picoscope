@@ -1,0 +1,24 @@
+[project]
+name = "mcp-picoscope"
+version = "0.1.0"
+description = "MCP server exposing a PicoScope PS2104 USB oscilloscope as tools"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2",
+    "numpy>=1.26",
+    "matplotlib>=3.8",
+]
+
+[project.optional-dependencies]
+# Real hardware. Requires a separately installed 64-bit PicoSDK (ps2000.dll).
+hardware = ["picosdk"]
+
+[project.scripts]
+mcp-picoscope = "mcp_picoscope.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mcp_picoscope*"]

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "picoscope": {
+      "command": "C:\\Users\\user\\mcp-picoscope\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "mcp_picoscope.server"],
+      "cwd": "C:\\Users\\user\\mcp-picoscope",
+      "env": {
+        "CAPTURE_DIR": "C:\\Users\\user\\mcp-picoscope\\captures"
+      }
+    }
+  }
+}

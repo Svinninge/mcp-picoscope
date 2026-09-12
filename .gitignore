@@ -19,3 +19,7 @@ captures/
 .idea/
 Thumbs.db
 desktop.ini
+
+# Session-lokalt
+scratch/
+.mcp.json.local

@@ -3,7 +3,11 @@
 Plan för att bygga en MCP-server (Model Context Protocol) som låter Claude styra
 och läsa av ett PicoScope PS2104 USB-oscilloskop.
 
-Status: **planering** — ingen kod skriven än.
+Status: **v1 byggd mot mock-backend** (2026-09-12). Steg 1, 2, 4 och 5 är klara
+och testade utan hårdvara; steg 3 (`backends/ps2000.py`) är skriven men aldrig
+körd. **Steg 0 är fortfarande blockerande** — PicoSDK saknas, och scopet syns i
+Windows som `VID_0CE9&PID_1007` med `Status: Error`, alltså uppräknat men utan
+drivrutin. Se [TODO.md](TODO.md) för vad som återstår.
 
 ---
 
@@ -107,25 +111,25 @@ läsbar resurs.
 
 ## 5. Genomförande — steg för steg
 
-**Steg 0 — Förarbete (hårdvara)**
+**Steg 0 — Förarbete (hårdvara)** 🔴 BLOCKERAD
 - Installera PicoSDK 64-bit. Verifiera att `ps2000.dll` finns.
 - Koppla in PS2104, kör Picos egen PicoScope-app och bekräfta att den ser enheten.
 - Kör ett minimalt Python-skript som öppnar enheten och skriver ut
   `ps2000_get_unit_info()`. **Detta är grindvakten** — går inte det här, är
   resten meningslöst.
 
-**Steg 1 — Skelett**
+**Steg 1 — Skelett** ✅ 2026-09-12
 - `pyproject.toml`, paketstruktur, `mcp`-beroendet (FastMCP).
 - Server som startar, exponerar `list_devices` mot mock-backenden.
 - Verifiera att Claude Code ser servern via `.mcp.json`.
 
-**Steg 2 — Mock-backend + analys**
+**Steg 2 — Mock-backend + analys** ✅ 2026-09-12
 - Signalgenerator i mocken: sinus, fyrkant, ramp, brus, valbar frekvens/amplitud.
 - `analysis.py` med Vpp/RMS/frekvens. Frekvens via nollgenomgångar med hysteres,
   inte via FFT-topp — robustare för fyrkant och låga frekvenser.
 - Enhetstester som mäter mockens kända signaler och jämför mot facit.
 
-**Steg 3 — Riktig ps2000-backend**
+**Steg 3 — Riktig ps2000-backend** 🟡 skriven, oprövad
 - `open_unit`, `set_channel`, `set_trigger`, `get_timebase`, `run_block`,
   `ready`-polling, `get_values`.
 - ADC-räknare → volt via `max_adc`-skalning per spänningsområde.
@@ -133,18 +137,18 @@ läsbar resurs.
   antal sampel; rapportera faktisk samplingshastighet tillbaka (den blir sällan
   exakt den man bad om).
 
-**Steg 4 — Export och presentation**
+**Steg 4 — Export och presentation** ✅ 2026-09-12
 - CSV (tid, spänning), NPZ för vidare analys, PNG via matplotlib.
 - Nedsampling för svaret: min/max-decimering, inte var N:te punkt — annars
   försvinner spikar.
 
-**Steg 5 — Robusthet**
+**Steg 5 — Robusthet** ✅ 2026-09-12 (timeout-vägen oprövad mot hårdvara)
 - Tydliga fel: enhet upptagen, USB frånkopplad mitt i fångst, överstyrning
   (signal klipper mot områdesgränsen → föreslå större område).
 - Timeout på trigg som aldrig löser ut.
 - Städa upp USB-handtaget vid avstängning.
 
-**Steg 6 — Dokumentation**
+**Steg 6 — Dokumentation** ✅ 2026-09-12
 - README med installation av PicoSDK, `.mcp.json`-exempel, exempeldialog.
 
 ---
@@ -165,9 +169,9 @@ läsbar resurs.
 
 - [ ] `open_device` hittar och öppnar en riktig PS2104.
 - [ ] `capture_block` på en känd signal (t.ex. 1 kHz fyrkant från en funktionsgenerator eller ett Arduino-PWM) ger rätt frekvens ±1 %.
-- [ ] `export_capture` producerar en PNG som ser rätt ut för ögat.
-- [ ] Hela verktygsuppsättningen fungerar mot mock-backenden utan hårdvara.
-- [ ] README räcker för att sätta upp servern på en ny dator.
+- [x] `export_capture` producerar en PNG som ser rätt ut för ögat. *(mock, 2 kHz fyrkant 30 % duty — verifierad 2026-09-12; kvarstår mot riktig signal)*
+- [x] Hela verktygsuppsättningen fungerar mot mock-backenden utan hårdvara. *(18 enhetstester + stdio-röktest, 2026-09-12)*
+- [x] README räcker för att sätta upp servern på en ny dator. *(2026-09-12)*
 - [ ] Taggad `v0.01` enligt det globala versionsregelverket.
 
 ---
@@ -175,8 +179,8 @@ läsbar resurs.
 ## 8. Öppna frågor
 
 1. Ska servern köras via `stdio` (lokalt, enklast) eller även kunna exponeras
-   över nätverket så scopet kan sitta på en annan dator? **Förslag: stdio i v1.**
+   över nätverket så scopet kan sitta på en annan dator? **Beslutat 2026-09-12: stdio i v1.**
 2. Behövs kontinuerlig streaming i v1, eller räcker blockfångst?
-   **Förslag: blockfångst i v1, streaming i v2.**
-3. Var ska exporterade filer hamna? **Förslag: `./captures/` i projektroten,
-   konfigurerbart via miljövariabel.**
+   **Beslutat 2026-09-12: blockfångst i v1, streaming i v2.**
+3. Var ska exporterade filer hamna? **Beslutat 2026-09-12: `./captures/` i projektroten,
+   konfigurerbart via `CAPTURE_DIR`.**
