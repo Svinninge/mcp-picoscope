@@ -183,3 +183,18 @@ def test_a_launch_sweeps_stale_windows_first(monkeypatch):
     )
     ui._open_edge("http://127.0.0.1:8071/")
     assert order == ["sweep", "launch"]
+
+
+def test_size_offset_is_learned_so_the_window_stops_growing(monkeypatch):
+    """Asking for 1000 and being told 1001 is the frame, not a resize."""
+    monkeypatch.setattr(ui, "_pending_size", (1000, 680))
+    view = ui.save_view(x=10, y=10, w=1001, h=681)
+    assert view["offset_w"] == 1 and view["offset_h"] == 1
+
+    seen: dict = {}
+    monkeypatch.setattr(ui, "_edge_path", lambda: "msedge.exe")
+    monkeypatch.setattr(ui, "close_stale_windows", lambda: 0)
+    monkeypatch.setattr(ui.subprocess, "Popen", lambda args, **kw: seen.update(args=args))
+    ui._open_edge("http://127.0.0.1:8071/")
+    # Asks for 1000 again, so the window comes back the size the user had.
+    assert "--window-size=1000,680" in seen["args"]

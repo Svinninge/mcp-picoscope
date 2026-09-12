@@ -108,10 +108,11 @@ _url: str | None = None
 _last_poll = 0.0
 _last_launch = 0.0
 _last_claim_write = 0.0
-# Set to the position we asked Edge for, until the page reports where it
-# actually landed. The difference is the window frame, and subtracting it next
-# time is what stops a window creeping down the screen every session.
+# What we asked Edge for, until the page reports what it actually got. The
+# differences are the window frame, and subtracting them next time is what
+# stops a window creeping down the screen and growing a pixel every session.
 _pending_launch: tuple[int, int] | None = None
+_pending_size: tuple[int, int] | None = None
 
 
 def _flag(name: str) -> bool:
@@ -211,7 +212,7 @@ def save_view(zoom=None, x=None, y=None, w=None, h=None) -> dict:
     difference is what separates reopening where the user left the window from
     creeping one title bar further down the screen each time.
     """
-    global _pending_launch
+    global _pending_launch, _pending_size
     view = view_prefs()
     if zoom is not None and 0.2 <= zoom <= 4:
         view["zoom"] = round(float(zoom), 2)
@@ -228,6 +229,13 @@ def save_view(zoom=None, x=None, y=None, w=None, h=None) -> dict:
         and MIN_SIZE <= h <= MAX_SIZE
     ):
         view["w"], view["h"] = int(w), int(h)
+        if _pending_size is not None:
+            # Asking for 1000 and being told 1001 is the frame, not a resize.
+            # Storing the reported number verbatim grows the window by a pixel
+            # every single launch.
+            view["offset_w"] = int(w) - _pending_size[0]
+            view["offset_h"] = int(h) - _pending_size[1]
+            _pending_size = None
     write_prefs({"view": view})
     return view
 
@@ -411,7 +419,7 @@ def _open_edge(target: str) -> None:
     Restores the size and position the window had when it was last seen, minus
     the frame offset measured then.
     """
-    global _pending_launch
+    global _pending_launch, _pending_size
     edge = _edge_path()
     if edge is None:
         log.warning("Edge not found; open %s yourself", target)
@@ -419,8 +427,11 @@ def _open_edge(target: str) -> None:
 
     close_stale_windows()
     view = view_prefs()
-    width = int(view.get("w") or DEFAULT_SIZE[0])
-    height = int(view.get("h") or DEFAULT_SIZE[1])
+    width = int(view.get("w") or DEFAULT_SIZE[0]) - int(view.get("offset_w", 0))
+    height = int(view.get("h") or DEFAULT_SIZE[1]) - int(view.get("offset_h", 0))
+    width = max(MIN_SIZE, min(MAX_SIZE, width))
+    height = max(MIN_SIZE, min(MAX_SIZE, height))
+    _pending_size = (width, height)
     args = [
         edge,
         f"--user-data-dir={EDGE_PROFILE_DIR}",

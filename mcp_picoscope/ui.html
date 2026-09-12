@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.07 -->
+<!-- File version: v0.08 -->
 <html lang="sv">
 <head>
 <meta charset="utf-8">
@@ -340,18 +340,27 @@ function giveUp() {
   document.title = "PicoScope — stängd";
   // Chromium refuses close() for a window the script did not open, and an
   // Edge --app window is one of those — measured, not assumed. The server
-  // closes its own window when it exits; this is what the page can do when
-  // the server died without getting the chance. Say so plainly rather than
-  // leave a frozen measurement on screen.
+  // closes its own window when it exits; this is what the page can do when the
+  // server died without getting the chance: say so, rather than leave a frozen
+  // measurement on screen looking like an instrument.
   window.close();
   setTimeout(() => {
-    document.body.innerHTML =
-      '<div style="display:flex;align-items:center;justify-content:center;' +
-      'height:100vh;flex-direction:column;gap:8px;color:#8b98a5;' +
-      'font:14px/1.5 'Segoe UI',system-ui,sans-serif">' +
-      '<div style="font-size:15px;color:#e6edf3">Servern är borta</div>' +
-      '<div>Den här displayen hörde till en session som avslutats.</div>' +
-      '<div>Stäng fönstret — nästa mätning öppnar ett nytt.</div></div>';
+    // Built as elements, not as a string of HTML. The string version carried
+    // nested quotes, lost its escapes on the way through a generator script,
+    // and killed the whole page with a SyntaxError at parse time.
+    const wrap = document.createElement("div");
+    wrap.setAttribute("style", "display:flex;align-items:center;" +
+      "justify-content:center;height:100vh;flex-direction:column;gap:8px;" +
+      "color:#8b98a5");
+    const head = document.createElement("div");
+    head.setAttribute("style", "font-size:15px;color:#e6edf3");
+    head.textContent = "Servern är borta";
+    const line1 = document.createElement("div");
+    line1.textContent = "Den här displayen hörde till en session som avslutats.";
+    const line2 = document.createElement("div");
+    line2.textContent = "Stäng fönstret — nästa mätning öppnar ett nytt.";
+    wrap.append(head, line1, line2);
+    document.body.replaceChildren(wrap);
   }, 400);
 }
 
