@@ -31,9 +31,10 @@ mcp_picoscope/scope.py           Värdetyper, backend-protokoll, ScopeSession (l
 mcp_picoscope/analysis.py        Vpp/RMS/frekvens/duty + min/max-decimering
 mcp_picoscope/export.py          CSV / NPZ / PNG under captures/
 mcp_picoscope/backends/mock.py   Simulerad signalkälla — facit för testerna
-mcp_picoscope/backends/ps2000.py Riktig hårdvara via ps2000.dll. OPRÖVAD, se nedan.
+mcp_picoscope/backends/ps2000.py Riktig hårdvara via ps2000.dll. Verifierad mot PS2104.
 tests/test_analysis.py           Mätningar mot mockens kända signaler
-tests/test_stdio.py              Röktest över riktig stdio-transport
+tests/test_stdio.py              Röktest över riktig stdio-transport (mock)
+tests/test_hardware.py           Röktest mot riktigt scope; hoppas över utan enhet
 ```
 
 ## Kör och testa
@@ -52,10 +53,18 @@ Servern registreras för Claude Code via [.mcp.json](.mcp.json) i projektroten.
 vilket ser ut som trasig hårdvara. Detta är projektets enskilt viktigaste
 tekniska faktum.
 
-**Steg 0 är inte gjort.** PicoSDK är inte installerat på utvecklingsdatorn, och scopet
-syns i Windows som `VID_0CE9&PID_1007` med `Status: Error` — uppräknat men utan
-drivrutin. Hela `backends/ps2000.py` är därför skriven men **aldrig körd**.
-Ändra den gärna, men påstå inte att den fungerar.
+**Steg 0 är gjort (2026-09-12).** Enheten svarar: variant `2104`, serienr
+`<serial>`, hårdvara 4, drivrutin 3.0.152.6217. Uppmätt, inte antaget:
+spänningsområden **100 mV–20 V** (20 mV och 50 mV avvisas), timebase 0–19
+(20 ns–10,49 ms), **buffertdjup 8092 sampel**. Det som fortfarande är oprövat är
+**voltskalan mot en känd spänning** och **triggvägen** — se TODO.md.
+
+**Drivrutinen hittas inte av sig själv.** `picosdk` löser DLL:en med
+`ctypes.util.find_library`, som på Windows söker i `PATH` — och ingenting lägger
+Picos katalog där. `_ensure_dll_on_path()` i `backends/ps2000.py` gör det, med
+`PICOSDK_DIR` som övertrumfar. På den här maskinen finns `ps2000.dll` inte i
+`SDK\lib` utan i `PicoScope 7 T&M Stable\`, eftersom appen installerades i
+stället för SDK:n; båda fungerar.
 
 **Mocken imiterar hårdvara med flit.** Sampelintervallet snäpper till en
 2^n-timebase, sampel kvantiseras till 8 bitar av området, och en för stor signal
@@ -83,5 +92,8 @@ globala Pythonen, den bär platformio.
 ## Hårdvara
 
 Byggd mot `dev-laptop` (Dell XPS 15 9500, Windows 11, Python 3.13 64-bit).
-PicoScope PS2104: 1 kanal, 8 bitar, ingen signalgenerator. PicoSDK måste vara
-64-bitars för att matcha Pythonen.
+PicoScope PS2104 (serienr <serial>, kalibrerad <date>): 1 kanal, 8 bitar,
+ingen signalgenerator, 50 MS/s, 8092 sampels buffert, 100 mV–20 V.
+Drivrutinen kom med **PicoScope 7 T&M** via winget
+(`PicoTechnology.Picoscope.T&M`) — PicoSDK som separat paket behövs alltså inte,
+appen bär samma `ps2000.dll`. 64-bitars för att matcha Pythonen.

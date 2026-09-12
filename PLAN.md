@@ -3,11 +3,12 @@
 Plan för att bygga en MCP-server (Model Context Protocol) som låter Claude styra
 och läsa av ett PicoScope PS2104 USB-oscilloskop.
 
-Status: **v1 byggd mot mock-backend** (2026-09-12). Steg 1, 2, 4 och 5 är klara
-och testade utan hårdvara; steg 3 (`backends/ps2000.py`) är skriven men aldrig
-körd. **Steg 0 är fortfarande blockerande** — PicoSDK saknas, och scopet syns i
-Windows som `VID_0CE9&PID_1007` med `Status: Error`, alltså uppräknat men utan
-drivrutin. Se [TODO.md](TODO.md) för vad som återstår.
+Status: **v1 körd mot riktig hårdvara** (2026-09-12). Steg 0–6 är genomförda:
+enheten identifierar sig som variant 2104 (serienr <serial>) och hela kedjan
+öppna → konfigurera → fånga → mäta → exportera fungerar genom MCP-servern.
+Kvar för definition of done: en mätning mot en **känd signal**, som samtidigt
+verifierar voltskalan (`MAX_ADC`) och frekvensnoggrannheten. Se
+[TODO.md](TODO.md).
 
 ---
 
@@ -46,8 +47,9 @@ buffertdjup och tillgängliga spänningsområden mot Picos datablad och mot
 fråga drivrutinen om.
 
 ### Beroenden på datorn
-- **PicoSDK (64-bit)** måste installeras separat — den innehåller `ps2000.dll`.
-  *Är inte installerat på utvecklingsdatorn idag.* Ladda ner från Pico Technology.
+- **`ps2000.dll` (64-bit)** behövs. *Installerad 2026-09-12* — men inte via
+  PicoSDK: `winget install PicoTechnology.Picoscope.T&M` ger PicoScope 7-appen,
+  som bär samma drivrutins-DLL:er i sin programkatalog. Det räcker.
 - Python-wrappern `picosdk` (Picos officiella `picosdk-python-wrappers`),
   som ctypes-bindar mot DLL:en.
 - Python 3.13 finns redan (`C:\path\to\AppData\Local\Programs\Python\Python313`).
@@ -111,7 +113,7 @@ läsbar resurs.
 
 ## 5. Genomförande — steg för steg
 
-**Steg 0 — Förarbete (hårdvara)** 🔴 BLOCKERAD
+**Steg 0 — Förarbete (hårdvara)** ✅ 2026-09-12
 - Installera PicoSDK 64-bit. Verifiera att `ps2000.dll` finns.
 - Koppla in PS2104, kör Picos egen PicoScope-app och bekräfta att den ser enheten.
 - Kör ett minimalt Python-skript som öppnar enheten och skriver ut
@@ -129,7 +131,7 @@ läsbar resurs.
   inte via FFT-topp — robustare för fyrkant och låga frekvenser.
 - Enhetstester som mäter mockens kända signaler och jämför mot facit.
 
-**Steg 3 — Riktig ps2000-backend** 🟡 skriven, oprövad
+**Steg 3 — Riktig ps2000-backend** ✅ 2026-09-12 (trigg-grenen kvar att prova)
 - `open_unit`, `set_channel`, `set_trigger`, `get_timebase`, `run_block`,
   `ready`-polling, `get_values`.
 - ADC-räknare → volt via `max_adc`-skalning per spänningsområde.
@@ -157,8 +159,8 @@ läsbar resurs.
 
 | Risk | Hantering |
 |---|---|
-| Fel drivrutinsfamilj (`ps2000a` istället för `ps2000`) | Steg 0 verifierar mot riktig enhet innan något byggs. |
-| PicoSDK saknas på maskinen | Mock-backend gör utveckling möjlig ändå; README dokumenterar installationen. |
+| Fel drivrutinsfamilj (`ps2000a` istället för `ps2000`) | ~~Steg 0 verifierar~~ — verifierat 2026-09-12: `ps2000` svarar, variant "2104". |
+| PicoSDK saknas på maskinen | ~~Mock-backend gör utveckling möjlig ändå~~ — löst 2026-09-12: PicoScope 7-appen bär `ps2000.dll`, och `_ensure_dll_on_path()` hittar den. |
 | 32/64-bitars DLL-krock med Python | Använd 64-bitars PicoSDK till 64-bitars Python. Kontrolleras i steg 0. |
 | Stora dataset spränger LLM-kontexten | Verktyg returnerar aldrig råa arrayer — princip 3 ovan. |
 | Drivrutinen är inte trådsäker | En session, serialiserade anrop. |
@@ -167,7 +169,7 @@ läsbar resurs.
 
 ## 7. Definition of done (v1)
 
-- [ ] `open_device` hittar och öppnar en riktig PS2104.
+- [x] `open_device` hittar och öppnar en riktig PS2104. *(2026-09-12, variant 2104 serienr <serial>)*
 - [ ] `capture_block` på en känd signal (t.ex. 1 kHz fyrkant från en funktionsgenerator eller ett Arduino-PWM) ger rätt frekvens ±1 %.
 - [x] `export_capture` producerar en PNG som ser rätt ut för ögat. *(mock, 2 kHz fyrkant 30 % duty — verifierad 2026-09-12; kvarstår mot riktig signal)*
 - [x] Hela verktygsuppsättningen fungerar mot mock-backenden utan hårdvara. *(18 enhetstester + stdio-röktest, 2026-09-12)*

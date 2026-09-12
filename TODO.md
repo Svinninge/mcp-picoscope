@@ -8,31 +8,27 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
 
 ---
 
-## Blockerat på hårdvara
+## Hårdvara — kvar att verifiera
 
-- 🔴 **Steg 0 — installera PicoSDK 64-bit.** Scopet syns i Windows som
-  `VID_0CE9&PID_1007` med `Status: Error`: uppräknat, men utan drivrutin.
-  Per laddar ner och kör installationen (SOUL.md: agenten installerar inte
-  systemprogramvara). Verifiera därefter att `ps2000.dll` finns och att Picos
-  egen PicoScope-app ser enheten.
-- 🔴 **Verifiera `backends/ps2000.py` mot riktig enhet.** Filen är skriven men
-  aldrig körd. Kontrollera i tur och ordning: `open_unit` ger handtag > 0,
-  `get_unit_info` rapporterar variant "2104", `_probe_ranges` ger enhetens
-  faktiska spänningsområden, `get_timebase` ger rimliga intervall, en fångst på
-  känd signal ger rätt frekvens ±1 %.
-- 🔴 **Mät `MAX_ADC` istället för att anta 32767.** Den legacy-drivrutinen
-  skalar till int16, men det är antaget, inte verifierat. En felskalning ger
-  rätt frekvens och fel volt — den sortens fel syns inte på kurvan.
-- 🟡 **Känd signal att mäta mot.** Ett Arduino-PWM eller en funktionsgenerator
-  med känd frekvens, så att definition-of-done går att bevisa och inte bedöma.
+- 🔴 **Voltskalan mot en känd spänning.** `MAX_ADC = 32767` är `picosdk`:s egen
+  konvention för `ps2000` (wrappern har ingen `maximum_value` att fråga och
+  faller tillbaka på `2**15-1`), men den är inte mätt. Ett fel här ger **rätt
+  frekvens och fel volt** — det syns inte på kurvan. Koppla något känt: ett
+  AA-batteri (~1,5 V DC) räcker för skalan, ett Arduino-PWM ger både skala och
+  frekvens.
+- 🔴 **Definition of done: frekvens ±1 % på känd signal.** Samma mätning stänger
+  både denna och punkten ovan.
+- 🟡 **Triggvägen är oprövad mot hårdvara.** `configure_trigger(mode="edge")`
+  och timeout-grenen i `_wait_ready` är körd som logik, aldrig mot en enhet som
+  faktiskt väntar på en flank. Kräver också en signal.
+- 🟢 **Buffertdjupet är 8092 sampel**, inte 32768. `capture_block` klampar redan,
+  men en begäran om fler sampel svarar tyst med färre — den borde säga det.
 
 ## Nästa
 
 - 🟡 **`capture_streaming(duration_s, rate)`** — finns i PLAN.md §4 men är inte
   byggd; planens §8 föreslår block i v1 och streaming i v2. Skriv den när
   blockvägen är verifierad mot hårdvara.
-- 🟡 **Timeout-vägen i `_wait_ready` är oprövad.** Testad logik, otestad mot en
-  trigg som faktiskt aldrig löser ut.
 - 🟢 **`autoset` kollar inte om signalen är för liten för det valda området.**
   Den väljer minsta område som rymmer topparna, men en signal under ett par
   procent av området rapporteras bara som "ingen periodisk signal". Den borde
@@ -56,8 +52,16 @@ Prioritet: 🔴 blockerande · 🟡 nästa · 🟢 när tillfälle ges
   hysteres, mittpunkt som nivå), `export.py` (CSV/NPZ/PNG), tolv MCP-verktyg
   och resursen `picoscope://state`. 18 enhetstester mot mockens facit + röktest
   över riktig stdio-transport, allt grönt. `.mcp.json` för Claude Code.
-- **2026-09-12 — Steg 3 skriven men oprövad.** `backends/ps2000.py` mot det
-  legacy `ps2000`-API:t: open/close, kanal, trigg, timebase-val, blockfångst,
-  ADC→volt. Väntar på PicoSDK.
+- **2026-09-12 — Steg 0 PASSERAD.** PicoScope 7 T&M installerad via winget
+  (bär `ps2000.dll`; separat PicoSDK behövdes inte). Enheten gick från
+  `Status: Error` till `OK` och svarar: variant 2104, serienr <serial>,
+  hårdvara 4, drivrutin 3.0.152.6217, kalibrerad <date>. Uppmätt: områden
+  100 mV–20 V (20/50 mV avvisas), timebase 0–19 = 20 ns–10,49 ms, 8092 sampels
+  buffert.
+- **2026-09-12 — Steg 3 verifierad mot riktig enhet.** `backends/ps2000.py`
+  öppnar, konfigurerar, fångar och exporterar genom MCP-servern.
+  `_ensure_dll_on_path()` tillagd — `picosdk` hittar annars inte drivrutinen.
+  `tests/test_hardware.py` (som vägrar mock-fallback) fällde ett saknat
+  `_timebase_limits`; rättat.
 - **2026-09-12 — Arbetsregler ärvda från ett tidigare projekt.** SOUL.md, CLAUDE.md,
   LESSONS.md och TODO.md anpassade för ett hårdvarunära MCP-projekt.

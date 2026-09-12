@@ -3,9 +3,9 @@
 MCP-server som låter Claude styra och läsa av ett **PicoScope PS2104**
 USB-oscilloskop.
 
-> **Status: v1 byggd mot mock-backend, hårdvaran ännu inte verifierad.** Alla
-> verktyg fungerar utan scope. `backends/ps2000.py` är skriven men aldrig körd —
-> PicoSDK saknas på maskinen (steg 0 i [PLAN.md](PLAN.md)).
+> **Status: v1 körd mot riktig PS2104** (2026-09-12). Hela kedjan öppna →
+> konfigurera → fånga → mäta → exportera fungerar mot hårdvaran. Kvar: en mätning
+> mot en **känd signal**, som verifierar voltskalan och frekvensnoggrannheten.
 
 ## Tanken
 
@@ -26,7 +26,7 @@ sökväg till filen.
 |---|---|
 | Python 3.11+ | 64-bitars, måste matcha SDK:ns bitness |
 | PicoScope PS2104 | 1 kanal, 8 bitar, legacy `ps2000`-drivrutin (**inte** `ps2000a`) |
-| PicoSDK 64-bit | Installeras separat från Pico Technology — innehåller `ps2000.dll` |
+| `ps2000.dll` 64-bit | Följer med PicoScope-appen (`winget install PicoTechnology.Picoscope.T&M`) eller med PicoSDK |
 | `picosdk` | Picos officiella Python-wrappers, `pip install picosdk` |
 
 De två sista behövs bara för riktig hårdvara. **Mock-backenden gör hela servern
@@ -55,11 +55,18 @@ claude mcp add --scope user picoscope -- C:\path\to\mcp-picoscope\.venv\Scripts\
 
 ### Hårdvara (steg 0)
 
-1. Installera **PicoSDK 64-bit** från Pico Technology.
-2. Koppla in PS2104:an och bekräfta i Picos egen PicoScope-app att den ses.
-   Utan drivrutin står enheten som `Status: Error` i Enhetshanteraren.
+1. Installera drivrutinen. Enklast via winget:
+   `winget install PicoTechnology.Picoscope.T&M` — appen bär `ps2000.dll`.
+   PicoSDK 64-bit från Pico Technology fungerar lika bra.
+2. Koppla in PS2104:an. Utan drivrutin står den som `Status: Error` i
+   Enhetshanteraren; med drivrutin som `PicoScope 2000 series PC Oscilloscope`.
 3. `pip install picosdk`.
-4. `open_device(backend="ps2000")` ska nu ge modell och serienummer.
+4. `.\.venv\Scripts\python.exe scratch\step0_verify.py` skriver ut variant,
+   serienummer, accepterade spänningsområden och hela timebase-tabellen.
+5. `open_device(backend="ps2000")` ska nu ge modell och serienummer.
+
+Servern hittar DLL:en själv (`_ensure_dll_on_path`). Ligger den någon annanstans,
+peka ut katalogen med miljövariabeln `PICOSDK_DIR`.
 
 Stäng PicoScope-appen innan du använder servern — enheten kan bara öppnas av en
 process i taget.
@@ -100,12 +107,15 @@ Exporter hamnar i `./captures/`, konfigurerbart via miljövariabeln `CAPTURE_DIR
 ## Utveckling
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests -q      # enhetstester + stdio-röktest
-.\.venv\Scripts\python.exe tests\test_stdio.py     # bara röktestet, med utskrift
+.\.venv\Scripts\python.exe -m pytest tests -q        # allt (hårdvarutestet hoppas över utan scope)
+.\.venv\Scripts\python.exe tests\test_stdio.py       # röktest mot mock, med utskrift
+.\.venv\Scripts\python.exe tests\test_hardware.py    # röktest mot riktigt scope
 ```
 
 Mocken bär facit: analysfunktionerna testas mot signaler med känd frekvens,
-amplitud och duty cycle.
+amplitud och duty cycle. Hårdvarutestet begär `backend="ps2000"` explicit — det
+får inte falla tillbaka på mocken, för då hade en trasig drivrutinssökväg lyst
+grönt.
 
 Arbetsregler och fallgropar: [SOUL.md](SOUL.md), [CLAUDE.md](CLAUDE.md),
 [LESSONS.md](LESSONS.md). Backlog: [TODO.md](TODO.md).

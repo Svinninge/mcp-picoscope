@@ -8,6 +8,22 @@ Format: en rubrik med datum, 1–2 meningar med regeln och kontexten som gav den
 
 ---
 
+## 2026-09-12 — Ett hårdvarutest som får falla tillbaka på mocken testar ingenting
+
+`open_device(backend="auto")` faller tillbaka på mocken när hårdvaran saknas —
+bekvämt i drift, värdelöst i ett test. `tests/test_hardware.py` begär därför
+`backend="ps2000"` explicit och verifierar att variant-strängen är "2104".
+Första körningen fällde direkt ett `AttributeError`: `_read_info` anropade ett
+`_timebase_limits` som aldrig skrivits. Med auto-fallback hade testet lyst grönt.
+
+## 2026-09-12 — `find_library` söker i PATH, och ingen lägger Pico där
+
+`picosdk` laddar DLL:en via `ctypes.util.find_library`, som på Windows söker
+`PATH`. Varken PicoSDK-installationen eller PicoScope-appen lägger sin katalog
+där, så importen misslyckas på en maskin där drivrutinen är installerad och
+fungerar. Leta upp katalogen i koden i stället för att sätta `PATH` för hand i
+ett skal — handpåläggningen följer inte med till nästa session.
+
 ## 2026-09-12 — "Ansluten" betyder inte "tillgänglig"
 
 PS2104:an satt i USB:n, men `Get-PnpDevice` visade `Status: Error` för

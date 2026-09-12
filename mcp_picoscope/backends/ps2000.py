@@ -1,10 +1,10 @@
 """Real hardware backend for the PicoScope 2104 via the legacy ps2000 driver.
 
-v0.01
+v0.02
 
-STATUS: written against the ps2000 API, not yet run against the device. PicoSDK
-is not installed on this machine (PLAN.md step 0), so every code path below is
-unverified. Treat it as a first draft until step 0 passes.
+STATUS: verified against the real device 2026-09-12 (PLAN.md step 0). The unit
+reports variant "2104", serial <serial>, hardware 4, driver 3.0.152.6217.
+Still unverified: the volt scale against a known voltage, and the trigger path.
 
 PS2104 belongs to the OLD 2000 series and speaks ps2000.dll. The ps2000a family
 answers "unit not found" on this device, and that failure is indistinguishable
@@ -14,7 +14,10 @@ from broken hardware if you do not already know. See SOUL.md, Hardware.
 from __future__ import annotations
 
 import ctypes
+import logging
+import os
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -28,10 +31,28 @@ from ..scope import (
     pick_range,
 )
 
+log = logging.getLogger(__name__)
+
+# Where ps2000.dll lives. picosdk resolves it with ctypes.util.find_library,
+# which on Windows searches PATH — and nothing puts Pico's directory there.
+# PicoSDK installs to SDK\lib; the PicoScope 7 application ships the same
+# driver DLLs in its own directory, which is what this machine actually has.
+DLL_NAME = "ps2000.dll"
+DLL_DIR_ENV = "PICOSDK_DIR"
+DLL_CANDIDATES = (
+    r"C:\Program Files\Pico Technology\SDK\lib",
+    r"C:\Program Files\Pico Technology\PicoScope 7 T&M Stable",
+    r"C:\Program Files\Pico Technology\PicoScope 7 T&M Early Access",
+    r"C:\Program Files\Pico Technology\PicoScope 7 Automotive Stable",
+    r"C:\Program Files\Pico Technology\PicoScope 6",
+)
+
 # ps2000 voltage range enum. The legacy driver has no call that reports which
 # ranges a given variant supports, so this table is the one thing that cannot
 # be asked for. Ranges the device rejects are dropped at open time by probing
-# set_channel, so the reported list still comes from the hardware.
+# set_channel, so the reported list still comes from the hardware — on the
+# PS2104 that leaves 100 mV..20 V; it rejects 20 mV and 50 mV (measured
+# 2026-09-12).
 RANGE_ENUM: dict[float, int] = {
     0.02: 1,
     0.05: 2,
@@ -46,7 +67,13 @@ RANGE_ENUM: dict[float, int] = {
 }
 
 CHANNEL_A = 0
-MAX_ADC = 32767  # legacy driver scales to full int16 regardless of 8-bit AFE
+# The legacy driver scales to full int16 regardless of the 8-bit front end, and
+# offers no maximum_value() call to ask — picosdk's own wrapper falls back to
+# the same 2**15-1. Unverified against a known voltage: a wrong scale here
+# gives the right frequency and the wrong volts, which no curve reveals.
+MAX_ADC = 32767
+# Timebases 0..19 are valid on the PS2104 (20 ns .. 10.49 ms, measured
+# 2026-09-12); the loop stops at the first rejection anyway.
 MAX_TIMEBASE = 32
 OVERSAMPLE = 1
 READY_POLL_S = 0.005
@@ -60,8 +87,41 @@ INFO_BATCH_AND_SERIAL = 4
 TRIGGER_DIRECTION = {"rising": 0, "falling": 1}
 
 
+def _dll_directory() -> Path | None:
+    """Find the directory holding ps2000.dll, or None if it is not installed.
+
+    PICOSDK_DIR wins when set, so an unusual install is a setting and not a
+    code change.
+    """
+    override = os.environ.get(DLL_DIR_ENV)
+    candidates = [override] if override else list(DLL_CANDIDATES)
+    for candidate in candidates:
+        if candidate and (Path(candidate) / DLL_NAME).is_file():
+            return Path(candidate)
+    return None
+
+
+def _ensure_dll_on_path() -> None:
+    """Put the driver directory where picosdk will look.
+
+    picosdk resolves the DLL with ctypes.util.find_library, which searches PATH
+    on Windows. Nothing adds Pico's directory to PATH, so a plain import fails
+    on a machine where the driver is installed and working — which is every
+    machine, until someone prepends it by hand.
+    """
+    directory = _dll_directory()
+    if directory is None:
+        return
+    if hasattr(os, "add_dll_directory"):  # Windows: dependent DLLs of ps2000
+        os.add_dll_directory(str(directory))
+    if str(directory) not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = str(directory) + os.pathsep + os.environ.get("PATH", "")
+        log.info("added %s to PATH for %s", directory, DLL_NAME)
+
+
 def _load_driver():
     """Import the picosdk wrapper, translating both ways it can fail."""
+    _ensure_dll_on_path()
     try:
         from picosdk.ps2000 import ps2000  # type: ignore
     except ImportError as exc:
@@ -70,10 +130,15 @@ def _load_driver():
             "Install it with: pip install picosdk"
         ) from exc
     except OSError as exc:
+        where = _dll_directory()
         raise ScopeError(
-            "ps2000.dll could not be loaded. Either PicoSDK is not installed, or "
-            "its bitness does not match this Python (64-bit Python needs the "
-            "64-bit PicoSDK). Original error: " + str(exc)
+            f"{DLL_NAME} could not be loaded"
+            + (f" from {where}" if where else " and was not found on this machine")
+            + ". Install the 64-bit PicoSDK (or the PicoScope application, which "
+            "ships the same driver), or point "
+            f"{DLL_DIR_ENV} at the directory holding it. A bitness mismatch looks "
+            "the same: 64-bit Python needs the 64-bit driver. "
+            f"Original error: {exc}"
         ) from exc
     return ps2000
 
@@ -172,6 +237,35 @@ class PS2000Backend:
                 "Legacy ps2000 driver. Hardware version "
                 f"{_unit_info(lib, handle, INFO_HARDWARE_VERSION)}."
             ),
+        )
+
+    def _timebase_limits(self) -> tuple[int, int]:
+        """Fastest sample interval (ns) and buffer depth, asked of the driver.
+
+        Probed with a small record so the question is about the device rather
+        than about the request: on the PS2104 this answers 20 ns and 8092
+        samples, and neither number belongs in a constant.
+        """
+        lib, handle = self._require()
+        probe_samples = 1024
+        for timebase in range(MAX_TIMEBASE):
+            interval_ns = ctypes.c_int32()
+            time_units = ctypes.c_int16()
+            max_samples = ctypes.c_int32()
+            ok = lib.ps2000_get_timebase(
+                handle,
+                timebase,
+                probe_samples,
+                ctypes.byref(interval_ns),
+                ctypes.byref(time_units),
+                OVERSAMPLE,
+                ctypes.byref(max_samples),
+            )
+            if ok and interval_ns.value > 0:
+                return interval_ns.value, max_samples.value
+        raise ScopeError(
+            "The driver rejected every timebase — the device answered open_unit "
+            "but cannot be configured to sample."
         )
 
     def _probe_ranges(self) -> tuple[float, ...]:
