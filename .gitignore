@@ -26,3 +26,7 @@ scratch/
 
 # Local machine paths — ship .mcp.json.example instead
 .mcp.json
+
+# PyInstaller output (packaging/build_exe.py)
+build/
+dist/

@@ -8,6 +8,26 @@ Newest first.
 
 ---
 
+## 2026-09-13
+
+**A Windows desktop app, `PicoScope.exe`.** The scope as an application for
+manual measurements: it opens the instrument, autosets, sweeps and shows the
+display, and closing the window releases everything. It also serves the MCP
+tools over HTTP, because the PS2104 opens in one process only — an app owning
+it while Claude started a server of its own would have them fight over it.
+
+Three faults found by running it rather than reading it. Shutdown took over
+20 s: the close threshold was counted on top of the 6 s grace the viewer check
+already gives, and uvicorn waited politely on connections streamable HTTP holds
+open. A window flashed open after the user closed the app, because the teardown
+closed the device through a tool and every tool asks for a window. And the log
+filled with Windows proactor `ConnectionResetError` tracebacks whenever a client
+hung up. Then the build: collecting all of the MCP SDK imports `mcp.cli`, which
+exits the process when `typer` is missing.
+
+Verified on the frozen exe: exit code 0, no process left behind, and the device
+free for the next process to open.
+
 ## 2026-09-12
 
 **The display and the tools translated to English**, ahead of making the

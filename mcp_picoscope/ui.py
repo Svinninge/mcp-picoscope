@@ -114,6 +114,11 @@ _last_claim_write = 0.0
 # stops a window creeping down the screen and growing a pixel every session.
 _pending_launch: tuple[int, int] | None = None
 _pending_size: tuple[int, int] | None = None
+# Set when the owner is shutting down. Every tool call passes ensure_started(),
+# so without this the teardown's own close_device() saw no window watching and
+# opened a new one — measured, a window flashed up a second after the user had
+# closed the app.
+_frozen = False
 
 
 def _flag(name: str) -> bool:
@@ -244,12 +249,20 @@ def save_view(zoom=None, x=None, y=None, w=None, h=None) -> dict:
 # -- lifecycle ------------------------------------------------------------
 
 
+def freeze() -> None:
+    """Never launch a window again in this process. For shutdown."""
+    global _frozen
+    _frozen = True
+
+
 def should_launch() -> tuple[bool, str]:
     """Whether to open a window now, and why not when the answer is no.
 
     Pure decision, kept out of ensure_started so it can be tested without
     spawning a browser.
     """
+    if _frozen:
+        return False, "shutting down"
     if not browser_enabled():
         return False, f"{BROWSER_ENV}=0"
     if viewer_present():

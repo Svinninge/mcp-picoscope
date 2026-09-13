@@ -205,6 +205,17 @@ the original plan)*
 - Trigger and sweep controls: Run / Normal / Single / Stop, and a trigger level
   dragged with the mouse (issue #1).
 
+**Step 7 — The desktop app** ✅ 2026-09-13 *(requested after v1)*
+- `PicoScope.exe`: one process owns the scope, shows the display for manual
+  measurements, and serves the MCP tools over streamable HTTP on 8090.
+- Closing the window ends everything. Detected from the page going quiet, using
+  the same poll heartbeat that already decides whether a window is watching.
+- Built with PyInstaller (`packaging/build_exe.py`), about 50 MB; the driver DLL
+  is not bundled.
+- Verified on the frozen exe against the hardware: page and version served from
+  the bundle, 15 tools over HTTP, a client measuring through the app, and on
+  closing the window exit code 0, no process left and the device free to open.
+
 **Step 6 — Documentation** ✅ 2026-09-12
 - README covering driver installation, an `.mcp.json` example and a sample
   dialogue.
@@ -247,6 +258,7 @@ the original plan)*
 | `PICOSCOPE_UI_PORT` | `8071` | Start port; ten are tried upwards. |
 | `PICOSCOPE_UI_BROWSER` | `1` | `0` serves the page but never opens a window. |
 | `PICOSDK_DIR` | *(auto)* | The directory holding `ps2000.dll` when the search misses. |
+| `PICOSCOPE_MCP_PORT` | `8090` | Where the desktop app serves MCP over HTTP. |
 
 ---
 

@@ -75,6 +75,37 @@ unusual, point `PICOSDK_DIR` at the directory holding it.
 Close the PicoScope application before using the server — the device can only be
 opened by one process at a time.
 
+## The desktop app
+
+`PicoScope.exe` is the scope as an application, for manual measurements. It opens
+the instrument, runs an autoset, starts sweeping and shows the display. **Close
+the window and everything goes with it:** the sweep stops, the USB handle is
+released, and the process exits.
+
+While it is open it also **serves the same MCP tools over HTTP**, so Claude can
+drive the very same instrument. That is not a convenience but a consequence of
+the hardware: the PS2104 opens in exactly one process. An app that owned the
+device while Claude started a server of its own would leave them fighting over
+it. One owner, two ways in.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .[build]
+.\.venv\Scripts\python.exe packaging\build_exe.py     # → dist\PicoScope.exe, about 50 MB
+```
+
+To let Claude use the app, copy [.mcp.json.app.example](.mcp.json.app.example) to
+`.mcp.json` — it points at `http://127.0.0.1:8090/mcp` instead of starting a
+server. Use one example or the other, not both.
+
+- The driver is **not** bundled. `ps2000.dll` belongs to the PicoScope or
+  PicoSDK installation, and the app finds it there.
+- Without a console, the app writes its log to
+  `%LOCALAPPDATA%\mcp-picoscope\app.log`. Look there when it will not start.
+- Closing is detected from the page going quiet, so the process ends about ten
+  seconds after the window does. That is deliberate: a window merely throttled
+  in the background must not switch the instrument off under you.
+- `PICOSCOPE_MCP_PORT` moves the endpoint off 8090.
+
 ## Tools
 
 | Tool | Description |

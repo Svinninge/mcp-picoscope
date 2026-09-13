@@ -12,9 +12,15 @@ dependencies = [
 [project.optional-dependencies]
 # Real hardware. Requires a separately installed 64-bit PicoSDK (ps2000.dll).
 hardware = ["picosdk"]
+# Only to build PicoScope.exe (packaging/build_exe.py); not needed to run.
+build = ["pyinstaller"]
 
 [project.scripts]
 mcp-picoscope = "mcp_picoscope.server:main"
+
+# The desktop app: owns the scope, shows the display, serves MCP over HTTP.
+[project.gui-scripts]
+picoscope-app = "mcp_picoscope.app:main"
 
 [build-system]
 requires = ["setuptools>=68"]

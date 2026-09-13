@@ -1,0 +1,9 @@
+{
+  "_comment": "Use this INSTEAD of .mcp.json.example when you run PicoScope.exe. The app owns the scope and serves the same tools over HTTP, so Claude connects to it rather than starting a server of its own — which could not open the device while the app holds it. Copy to .mcp.json. Close the app and the endpoint goes with it.",
+  "mcpServers": {
+    "picoscope": {
+      "type": "http",
+      "url": "http://127.0.0.1:8090/mcp"
+    }
+  }
+}

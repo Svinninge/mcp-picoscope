@@ -430,3 +430,12 @@ def test_autoset_gives_back_the_trigger_mode_it_found():
     assert session.trigger.direction == "falling"
     assert session.trigger.auto_trigger_ms == 250
     assert session.trigger.threshold_v > 1.0, "the level did not move to the signal"
+
+
+def test_a_frozen_display_never_launches_a_window(monkeypatch):
+    """Shutdown must not open the window the user has just closed."""
+    monkeypatch.setattr(ui, "_frozen", False)
+    assert ui.should_launch()[0] is True
+    ui.freeze()
+    assert ui.should_launch() == (False, "shutting down")
+    monkeypatch.setattr(ui, "_frozen", False)

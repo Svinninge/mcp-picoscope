@@ -34,6 +34,7 @@ mcp_picoscope/scope.py           Value types, backend protocol, ScopeSession (th
 mcp_picoscope/analysis.py        Vpp/RMS/frequency/duty + min-max decimation
 mcp_picoscope/control.py         Actions and the sweep engine — shared by MCP and the page
 mcp_picoscope/export.py          CSV / NPZ / PNG under captures/
+mcp_picoscope/app.py             Desktop app: owns the scope, display, MCP over HTTP (8090)
 mcp_picoscope/ui.py              Local web server + Edge launch (port 8071)
 mcp_picoscope/ui.html            The page: trace, readouts, MCP activity
 mcp_picoscope/backends/mock.py   Simulated signal source — the tests' ground truth
@@ -50,6 +51,8 @@ tools/verify_trigger.py          The edge trigger against a periodic signal
 tools/trigger_stability.py       The same, measured through the display over HTTP
 tools/measure_signal.py          One signal across several timebases
 tools/ui_session.py              Holds a session open so the display stays live
+packaging/build_exe.py           Builds dist/PicoScope.exe; every option explained
+tests/test_app.py                The app's close detection
 ```
 
 **Versions:** `SYSTEM_VERSION` in `mcp_picoscope/__init__.py` mirrors the latest
@@ -172,6 +175,29 @@ rescue, `normal` clears it so the trigger must really fire — and arms an edge
 trigger when the scope is free-running, or the button would do nothing in exactly
 the state the device opens in. Neither touches the level or the direction; those
 are the user's.
+
+**The app is a second transport, not a second implementation.** `app.py`
+imports the same `server` module and runs its tools over streamable HTTP, so
+Claude and the window share one session, one lock and one USB handle. It
+builds the Starlette app itself and keeps the `uvicorn.Server`, because
+`MCPServer.run("streamable-http")` blocks with no way to stop it short of
+killing the process around an open device.
+
+**Closing the app, in order.** `ui.freeze()` first: closing the device goes
+through a tool, every tool asks for a window, and with the user's window just
+closed it got a new one — measured, a window flashed open a second after the
+app was closed. Then stop the sweep, then close the device, then the display,
+then HTTP. Streamable HTTP holds connections open and uvicorn waits for them by
+default, so `timeout_graceful_shutdown` is set; without it the endpoint hung the
+full stop timeout.
+
+**Two things the build needed that are not obvious.** `--collect-submodules mcp`
+imports every module in the SDK, including `mcp.cli`, which calls `sys.exit(1)`
+at import when its optional `typer` dependency is missing and takes the build
+down. And the Windows proactor event loop logs a full `ConnectionResetError`
+traceback every time an HTTP client hangs up — twelve for one test session —
+so `app.py` filters exactly that exception type on the `asyncio` logger and
+nothing else.
 
 **Who owns the timebase.** A running sweep keeps its own window, so anything that picks a timebase has to hand it over or be undone 150 ms later — that is how autoset came to look broken. `SweepRunner.set_window(seconds, for_hz)` is the handover, and the retune compares **frequencies, not window lengths**: comparing lengths cannot tell "the signal changed" from "somebody deliberately chose a different number of periods", so a deliberate choice was overwritten on the next sweep.
 
