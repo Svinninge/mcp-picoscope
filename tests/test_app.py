@@ -1,7 +1,7 @@
-# File version: v0.01
+﻿# File version: v0.01
 """The desktop app's one rule: the window closing is what ends everything.
 
-It is detected from silence — the page stops polling — so the rule has two ways
+It is detected from silence â€” the page stops polling â€” so the rule has two ways
 to go wrong, and both are tested: shutting the instrument off while the window is
 merely slow to open, and never noticing that it closed.
 """
@@ -89,3 +89,22 @@ def test_a_client_hanging_up_is_filtered_but_real_errors_are_not():
     assert keep(record(ConnectionResetError(10054, "reset"))) is False
     assert keep(record(RuntimeError("a real problem"))) is True
     assert keep(logging.LogRecord("asyncio", logging.ERROR, "", 0, "no exc", None, None)) is True
+
+
+def test_the_http_server_starts_without_a_console(monkeypatch):
+    """The windowed exe has sys.stdout = None; uvicorn's default log config
+    called isatty() on it and the app died before the window opened."""
+    import socket
+    import sys
+
+    from mcp_picoscope import server
+    from mcp_picoscope.app import McpHttpServer
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    http = McpHttpServer(server.server, "127.0.0.1", port, "/mcp")
+    http.start()
+    http.stop()

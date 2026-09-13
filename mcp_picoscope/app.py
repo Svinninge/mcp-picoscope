@@ -147,6 +147,10 @@ class McpHttpServer:
             host=host,
             port=port,
             log_level="warning",
+            # uvicorn's own log config builds a formatter that calls
+            # sys.stdout.isatty(); in the windowed exe there is no console and
+            # stdout is None, so it crashed at start. Log through the app log.
+            log_config=None,
             timeout_graceful_shutdown=HTTP_GRACEFUL_S,
         )
         self._uvicorn = uvicorn.Server(config)
