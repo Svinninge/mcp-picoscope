@@ -348,7 +348,9 @@ class PS2000Backend:
 
     # -- acquisition -------------------------------------------------------
 
-    def capture_block(self, duration_s: float, samples: int) -> Capture:
+    def capture_block(
+        self, duration_s: float, samples: int, max_wait_s: float | None = None
+    ) -> Capture:
         lib, handle = self._require()
         if duration_s <= 0:
             raise ScopeError("duration_s must be positive.")
@@ -364,7 +366,13 @@ class PS2000Backend:
         ) == 0:
             raise ScopeError("ps2000_run_block failed to start the capture.")
 
-        self._wait_ready(timeout_s=self._capture_timeout_s(time_indisposed_ms.value))
+        timeout_s = self._capture_timeout_s(time_indisposed_ms.value)
+        if max_wait_s is not None:
+            # Never shorter than the acquisition itself: a limit below that
+            # would time out captures that were never waiting for a trigger.
+            floor = max(time_indisposed_ms.value, 0) / 1000.0 + 0.5
+            timeout_s = min(timeout_s, max(max_wait_s, floor))
+        self._wait_ready(timeout_s=timeout_s)
 
         buffer = (ctypes.c_int16 * samples)()
         overflow = ctypes.c_int16()

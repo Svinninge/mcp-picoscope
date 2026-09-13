@@ -212,18 +212,13 @@ def configure_channel(
     """Set channel A. range_v is full scale in volts (±), coupling 'DC' or 'AC'.
 
     The device snaps to the smallest range that holds range_v; the reply says
-    which one it picked.
+    which one it picked. Changing the coupling moves the signal's midpoint (a
+    0..3 V sine sits at 1.5 V in DC and 0 V in AC), so the trigger level follows
+    it — otherwise an armed trigger would never fire after the switch.
     """
-    backend = session.require_open()
-    applied = backend.set_channel(ChannelConfig(range_v, coupling, enabled))
-    session.channel = applied
-    return {
-        "range_v": applied.range_v,
-        "coupling": applied.coupling,
-        "enabled": applied.enabled,
-        "requested_range_v": range_v,
-        "available_ranges_v": list(session.device.voltage_ranges_v),  # type: ignore[union-attr]
-    }
+    # The display's AC/DC button runs this same function, so a coupling change
+    # moves the trigger level the same way whoever asks for it.
+    return control.configure_channel(session, range_v, coupling, enabled)
 
 
 @tool

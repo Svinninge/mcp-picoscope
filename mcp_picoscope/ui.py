@@ -86,6 +86,12 @@ DEFAULT_SIZE = (1000, 680)
 
 PAGE = Path(__file__).with_name("ui.html")
 
+# How long a state read may wait for the session lock. The lock serialises the
+# driver, so a capture holds it for as long as the capture takes. The page
+# polls every 400 ms and would rather draw the last frame again than freeze;
+# it gets the previous snapshot, marked busy.
+STATE_LOCK_WAIT_S = 0.25
+
 EDGE_CANDIDATES = (
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
@@ -101,6 +107,7 @@ EDGE_PROFILE_DIR = Path(tempfile.gettempdir()) / "picoscope-edge-profile"
 SWEEP_TIMEOUT_S = 10
 
 _activity: deque[dict] = deque(maxlen=ACTIVITY_MAX)
+_last_state: dict | None = None
 _state_lock = threading.Lock()
 _prefs_lock = threading.Lock()
 _server: ThreadingHTTPServer | None = None
@@ -488,7 +495,14 @@ def _ui_state() -> dict:
     if session is None:
         return {"open": False, **base}
 
-    with session.lock:
+    global _last_state
+    if not session.lock.acquire(timeout=STATE_LOCK_WAIT_S):
+        # The device is busy — most likely a capture waiting for its trigger.
+        # Serve the last frame rather than make the window wait for the device.
+        if _last_state is not None:
+            return {**_last_state, **base, "busy": True}
+        return {"open": session.is_open, **base, "busy": True}
+    try:
         state = session.state()
         latest = next(reversed(session.captures.values()), None)
         if latest is not None:
@@ -497,9 +511,11 @@ def _ui_state() -> dict:
                 "measurements": measure(latest),
                 "curve": downsample_minmax(latest.volts, latest.dt_s, UI_CURVE_POINTS),
             }
-    state.update(base)
+    finally:
+        session.lock.release()
     state["simulated"] = state.get("backend") == "mock"
-    return state
+    _last_state = state
+    return {**state, **base, "busy": False}
 
 
 # What the page is allowed to do, as opposed to watch. Autoset only changes the
@@ -507,7 +523,7 @@ def _ui_state() -> dict:
 # signal generator — and it runs the same code the MCP tool runs, under the
 # same lock. Anything added here needs the same three answers: one
 # implementation, one lock, and a result the session can report afterwards.
-CONTROLS = ("autoset", "trigger", "sweep")
+CONTROLS = ("autoset", "trigger", "sweep", "coupling")
 
 
 def run_control(action: str, values: dict) -> dict:
@@ -543,6 +559,9 @@ def run_control(action: str, values: dict) -> dict:
             delay_pct=current.delay_pct,
             auto_trigger_ms=current.auto_trigger_ms,
         )
+    elif action == "coupling":
+        value = (values.get("value") or [""])[0]
+        body = control.configure_channel(_session, coupling=value)
     else:  # sweep
         mode = (values.get("mode") or ["auto"])[0]
         body = (

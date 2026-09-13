@@ -199,6 +199,14 @@ traceback every time an HTTP client hangs up — twelve for one test session —
 so `app.py` filters exactly that exception type on the `asyncio` logger and
 nothing else.
 
+**AC coupling has to settle.** It is a capacitor, and after switching to AC the midpoint drifts: measured +0.24 V at 1.08 s, +0.02 V at 1.25 s, settled by 1.42 s. The first version took one capture straight after the switch and put the trigger at 1.258 V on a signal centred at 0 V. `_settled_capture` repeats captures until the midpoint moves by no more than two ADC steps. The mock models the settling with the measured time constant (`AC_SETTLE_TAU_S`); it used to remove the DC instantly, which is how the bug passed every test.
+
+**The captures that find a new trigger level must not wait for the old one.** After AC → DC in NORMAL mode, an edge trigger left at −0.02 V never fires on a 0..3 V signal, so the settling capture waited out its timeout and the switch failed. Those captures run free-running, and the user's mode is given back around the new level.
+
+**Nothing may freeze the window while a trigger waits.** The driver needs the session lock for a whole capture, and a capture waiting on a trigger that never fires held it for 6 s — the display's state read waits on the same lock, so the window froze. The sweep now waits for a trigger in turns of `SWEEP_TRIGGER_WAIT_S` (`capture_block(max_wait_s=...)`), and `_ui_state` takes the lock with a timeout and serves the last frame marked `busy` rather than wait. Measured with an unreachable trigger: the longest state read 291 ms.
+
+**The trigger marker is on the right, the 0 V marker on the left**, as on a bench scope. In AC coupling the trigger level lands near 0 V, where two markers on the same edge would sit on top of each other.
+
 **Who owns the timebase.** A running sweep keeps its own window, so anything that picks a timebase has to hand it over or be undone 150 ms later — that is how autoset came to look broken. `SweepRunner.set_window(seconds, for_hz)` is the handover, and the retune compares **frequencies, not window lengths**: comparing lengths cannot tell "the signal changed" from "somebody deliberately chose a different number of periods", so a deliberate choice was overwritten on the next sweep.
 
 **A sweep window can trap itself.** Too short a window holds fewer than two edges, so no frequency is measured, so the retune that would widen it never fires. Seen live: stuck at the 20 µs minimum with an 800 Hz signal on the probe — 0.066 of a period per capture. After `SWEEP_MISSES_BEFORE_WIDENING` empty sweeps the window widens by `SWEEP_WIDEN_FACTOR`; widening is safe, since a window that is too long only draws more periods while one that is too short shows nothing at all.

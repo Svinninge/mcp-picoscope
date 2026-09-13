@@ -439,3 +439,178 @@ def test_a_frozen_display_never_launches_a_window(monkeypatch):
     ui.freeze()
     assert ui.should_launch() == (False, "shutting down")
     monkeypatch.setattr(ui, "_frozen", False)
+
+
+# -- AC/DC coupling ---------------------------------------------------------
+# Changing the coupling moves the signal's midpoint, so an armed trigger has to
+# follow it or it never fires again. One implementation for both surfaces.
+
+
+def offset_session():
+    from mcp_picoscope.backends.mock import MockSignal
+
+    # 0..3 V: the bench signal's shape, midpoint 1.5 V in DC, 0 V in AC.
+    return sweep_session(MockSignal("sine", 1000.0, 1.5, offset_v=1.5, noise_v=0.0))
+
+
+def test_switching_to_ac_moves_the_trigger_level_to_zero():
+    from mcp_picoscope import control
+
+    session = offset_session()
+    control.set_trigger(session, "edge", 1.5, "rising")
+    reply = control.configure_channel(session, coupling="AC")
+    assert reply["coupling"] == "AC"
+    assert abs(session.trigger.threshold_v) < 0.1, "trigger left at the DC midpoint"
+    assert session.trigger.mode == "edge" and session.trigger.direction == "rising"
+
+
+def test_switching_back_to_dc_moves_it_back_to_the_signal():
+    from mcp_picoscope import control
+
+    session = offset_session()
+    control.configure_channel(session, coupling="AC")
+    control.configure_channel(session, coupling="DC")
+    assert session.trigger.threshold_v == pytest.approx(1.5, abs=0.1)
+
+
+def test_a_range_change_alone_leaves_the_trigger_where_it_was():
+    from mcp_picoscope import control
+
+    session = offset_session()
+    control.set_trigger(session, "edge", 1.234, "falling")
+    reply = control.configure_channel(session, range_v=10.0)
+    assert reply["range_v"] == 10.0
+    assert session.trigger.threshold_v == pytest.approx(1.234)
+    assert "trigger" not in reply
+
+
+def test_an_unknown_coupling_is_refused_with_the_valid_ones():
+    from mcp_picoscope import control
+    from mcp_picoscope.scope import ScopeError
+
+    session = offset_session()
+    with pytest.raises(ScopeError, match="DC, AC"):
+        control.configure_channel(session, coupling="GND")
+
+
+def test_the_coupling_button_runs_the_same_code_as_the_tool(monkeypatch):
+    from mcp_picoscope import control
+
+    calls: list = []
+    monkeypatch.setattr(ui, "_session", "the-session")
+    monkeypatch.setattr(
+        control,
+        "configure_channel",
+        lambda s, **kw: calls.append((s, kw)) or {"coupling": kw["coupling"]},
+    )
+    body = ui.run_control("coupling", {"value": ["AC"]})
+    assert calls == [("the-session", {"coupling": "AC"})]
+    assert body["ok"] and body["coupling"] == "AC"
+
+
+def test_the_mock_ac_coupling_settles_like_the_hardware():
+    """The model the coupling tests depend on: straight after the switch the DC is
+    still there. Without this the mock removed it instantly and a trigger set from
+    an unsettled capture passed every test, while the hardware put it at 1.258 V
+    on a signal centred at 0 V."""
+    from mcp_picoscope.analysis import measure
+    from mcp_picoscope.scope import ChannelConfig
+
+    session = offset_session()
+    backend = session.backend
+    backend.set_channel(ChannelConfig(5.0, "AC", True))
+    early = measure(backend.capture_block(0.02, 4096))
+    time.sleep(1.0)
+    late = measure(backend.capture_block(0.02, 4096))
+    assert (early["vmin_v"] + early["vmax_v"]) / 2 > 0.8, "no settling modelled"
+    assert abs((late["vmin_v"] + late["vmax_v"]) / 2) < 0.1
+
+
+def test_the_trigger_level_is_taken_after_ac_has_settled():
+    from mcp_picoscope import control
+
+    session = offset_session()
+    control.set_trigger(session, "edge", 1.5, "rising")
+    reply = control.configure_channel(session, coupling="AC")
+    assert reply["settled"] is True
+    assert abs(session.trigger.threshold_v) < 0.1, (
+        f"level {session.trigger.threshold_v} V taken before the input settled"
+    )
+
+
+# -- trigger waits must never freeze anything --------------------------------
+
+
+def test_switching_coupling_in_normal_mode_does_not_wait_for_the_old_level():
+    """AC → DC with an edge trigger left at -0.05 V and no auto-trigger rescue.
+
+    A 0..3 V signal never crosses -0.05 V, so a capture that honoured that
+    trigger waited out its timeout and the whole switch failed — measured on the
+    hardware. The settling captures run free-running now.
+    """
+    from mcp_picoscope import control
+
+    session = offset_session()
+    control.configure_channel(session, coupling="AC")
+    control.set_trigger(session, "edge", -0.05, "rising", auto_trigger_ms=0)
+    reply = control.configure_channel(session, coupling="DC")
+    assert reply["coupling"] == "DC"
+    assert session.trigger.mode == "edge", "the user's trigger mode was lost"
+    assert session.trigger.auto_trigger_ms == 0, "NORMAL's no-rescue setting was lost"
+    assert session.trigger.threshold_v == pytest.approx(1.5, abs=0.1)
+
+
+def test_the_sweep_bounds_how_long_a_capture_may_wait_for_a_trigger():
+    """Holding the lock for a 6 s trigger wait froze the display."""
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    seen: list = []
+    real = session.backend.capture_block
+
+    def recording(duration_s, samples, max_wait_s=None):
+        seen.append(max_wait_s)
+        return real(duration_s, samples, max_wait_s=max_wait_s)
+
+    session.backend.capture_block = recording
+    try:
+        control.start_sweep(session, "single")
+        deadline = time.monotonic() + 3
+        while control.sweep_status()["running"] and time.monotonic() < deadline:
+            time.sleep(0.05)
+    finally:
+        control.stop_sweep(session)
+    assert seen and seen[0] == control.SWEEP_TRIGGER_WAIT_S
+
+
+def test_the_display_serves_the_last_frame_while_the_device_is_busy(monkeypatch):
+    """A capture waiting for its trigger holds the lock; the window must not wait."""
+    import threading
+
+    session = sweep_session()
+    monkeypatch.setattr(ui, "_session", session)
+    monkeypatch.setattr(ui, "_last_state", None)
+    first = ui._ui_state()
+    assert first["busy"] is False and first["open"] is True
+
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold_the_lock():
+        with session.lock:
+            held.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=hold_the_lock)
+    thread.start()
+    held.wait(2)
+    try:
+        started = time.monotonic()
+        busy = ui._ui_state()
+        waited = time.monotonic() - started
+    finally:
+        release.set()
+        thread.join()
+    assert busy["busy"] is True
+    assert busy["open"] is True, "the busy frame forgot the device was open"
+    assert waited < 1.0, f"the state read waited {waited:.2f} s for the device"

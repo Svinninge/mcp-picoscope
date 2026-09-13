@@ -15,6 +15,7 @@ clips instead of growing.
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -37,6 +38,12 @@ BASE_RATE_HZ = 50e6
 MAX_SAMPLES = 32768
 VOLTAGE_RANGES_V = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
 RESOLUTION_BITS = 8
+# AC coupling is a capacitor, and it takes time to charge to the new DC level.
+# Measured on the PS2104, 2026-09-13: after switching an 0..3 V sine to AC the
+# midpoint read +0.24 V at 1.08 s, +0.02 V at 1.25 s and settled by 1.42 s —
+# a time constant near 0.12 s. The mock used to remove the DC instantly, which
+# is exactly how a bug that measured an unsettled signal passed every test.
+AC_SETTLE_TAU_S = 0.12
 
 
 @dataclass
@@ -89,6 +96,7 @@ class MockBackend:
         self.trigger = TriggerConfig()
         self._rng = np.random.default_rng(seed)
         self._open = False
+        self._ac_since = 0.0
 
     # -- lifecycle ---------------------------------------------------------
 
@@ -132,6 +140,8 @@ class MockBackend:
         config.range_v = pick_range(config.range_v, VOLTAGE_RANGES_V)
         if config.coupling not in ("DC", "AC"):
             raise ScopeError(f"coupling must be 'DC' or 'AC', got {config.coupling!r}.")
+        if config.coupling == "AC" and self.channel.coupling != "AC":
+            self._ac_since = time.monotonic()  # the capacitor starts charging now
         self.channel = config
         return config
 
@@ -152,7 +162,10 @@ class MockBackend:
 
     # -- acquisition -------------------------------------------------------
 
-    def capture_block(self, duration_s: float, samples: int) -> Capture:
+    def capture_block(
+        self, duration_s: float, samples: int, max_wait_s: float | None = None
+    ) -> Capture:
+        # max_wait_s bounds a trigger wait; the mock answers at once either way.
         if not self._open:
             raise ScopeError("Mock device is not open.")
         if duration_s <= 0:
@@ -167,7 +180,11 @@ class MockBackend:
 
         volts = self.signal.at(t)
         if self.channel.coupling == "AC":
-            volts = volts - float(np.mean(volts))
+            # The DC level decays away rather than vanishing: what is left of it
+            # shrinks with the time since the switch.
+            dc = float(np.mean(volts))
+            remaining = math.exp(-(time.monotonic() - self._ac_since) / AC_SETTLE_TAU_S)
+            volts = volts - dc + dc * remaining
         if self.signal.noise_v > 0:
             volts = volts + self._rng.normal(0.0, self.signal.noise_v, samples)
 

@@ -10,6 +10,22 @@ Newest first.
 
 ## 2026-09-13
 
+**AC/DC coupling and a 0 V marker in the display.** Asked as "shouldn't the
+trace be centred on 0 V?" — no: in DC coupling the trace shows the true voltage,
+exactly as a bench scope does. What was missing was a marker saying where zero
+is, and an AC button to centre the signal on purpose. The PS2104 has no analogue
+offset (checked in the driver), so AC is also its only way to put more ADC steps
+across an offset signal.
+
+Three faults, each found on the hardware rather than in the tests. The trigger
+level was taken from a capture made before AC coupling settled: 1.258 V on a
+signal centred at 0 V. The captures that find the new level waited for the old
+one, so AC → DC in NORMAL mode failed outright. And a capture waiting for a
+trigger held the session lock for 6 s, freezing the whole window. After the
+fixes, the user's own AC click on a 10 kHz signal set the level to −0.0399 V
+against a midpoint of −0.0399 V, and with an unreachable trigger the display's
+slowest state read was 291 ms.
+
 **A Windows desktop app, `PicoScope.exe`.** The scope as an application for
 manual measurements: it opens the instrument, autosets, sweeps and shows the
 display, and closing the window releases everything. It also serves the MCP

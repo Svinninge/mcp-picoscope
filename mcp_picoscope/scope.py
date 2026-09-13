@@ -94,7 +94,9 @@ class ScopeBackend(Protocol):
 
     def set_trigger(self, config: TriggerConfig) -> TriggerConfig: ...
 
-    def capture_block(self, duration_s: float, samples: int) -> Capture: ...
+    def capture_block(
+        self, duration_s: float, samples: int, max_wait_s: float | None = None
+    ) -> Capture: ...
 
 
 @dataclass

@@ -149,6 +149,8 @@ with the mouse** on the trace. The line is always drawn, dimmed when the trigger
 is not armed, and dragging it is what arms it. The arrow button toggles rising
 and falling edge.
 
+**AC / DC and the 0 V marker.** The green pointer at the left edge is 0 V, as on a bench scope; the trigger marker sits at the right edge. In **DC** the trace shows the true voltage, so a 0..3 V signal floats above the marker — that is correct, not an offset error. **AC** removes the DC level and centres the signal on 0 V. On a PS2104 that is also the only way to gain resolution on an offset signal: the ps2000 driver has no analogue offset, so the range cannot follow the signal up. A 0..3 V sine on ±5 V uses about 30 % of the ADC; AC coupled on ±2 V it uses 75 %. The price is the DC level itself, and square waves grow sloping tops through the coupling capacitor — which is why autoset never switches to AC on its own. Switching coupling moves the trigger level to the signal's new midpoint, once the capacitor has settled.
+
 A trigger that never fires is a **state, not a fault**: the sweep keeps waiting
 and prints why below the trace instead of stopping.
 

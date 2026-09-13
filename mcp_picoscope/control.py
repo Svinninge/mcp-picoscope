@@ -86,6 +86,14 @@ SWEEP_RETUNE_RATIO = 1.5
 # capture. After this many sweeps without a frequency, widen and try again.
 SWEEP_MISSES_BEFORE_WIDENING = 3
 SWEEP_WIDEN_FACTOR = 8.0
+# How long one sweep may wait for a trigger while holding the session lock.
+# The driver needs the lock for the whole capture, so a capture waiting on a
+# trigger that never fires held it for the backend's full 6 s — and the
+# display's state read waits on that same lock, so the whole window froze
+# (measured). NORMAL mode loses nothing by waiting in short turns: the loop
+# simply tries again, and between turns everything else gets the lock.
+SWEEP_TRIGGER_WAIT_S = 1.0
+
 # What an edge trigger's rescue is set to when leaving NORMAL for AUTO.
 NORMAL_RESCUE_MS = 1000
 
@@ -211,6 +219,122 @@ def capture_block(session: ScopeSession, duration_s: float, samples: int) -> dic
                 "[time_s, volt] pairs, min/max per bucket so spikes survive."
             ),
         }
+
+
+COUPLINGS = ("DC", "AC")
+# Switching to AC charges the coupling capacitor, and until it settles the
+# signal's midpoint drifts. Measured on the PS2104: +0.24 V at 1.08 s, +0.02 V
+# at 1.25 s, settled by 1.42 s. The first version took one capture straight
+# after the switch and set the trigger to 1.258 V on a signal centred at 0 V —
+# it only still fired because that happened to sit below the 1.45 V peak.
+# So captures are repeated until the midpoint stops moving: two readings within
+# SETTLE_LSB steps of the ADC, spaced far enough apart to see a decay.
+SETTLE_LSB = 2
+SETTLE_INTERVAL_S = 0.15
+SETTLE_TIMEOUT_S = 3.0
+
+
+def configure_channel(
+    session: ScopeSession,
+    range_v: float | None = None,
+    coupling: str | None = None,
+    enabled: bool | None = None,
+) -> dict:
+    """Set channel A, from either surface. Unset arguments keep their value.
+
+    Changing the coupling moves the signal: a 0..3 V sine has its midpoint at
+    1.5 V in DC and at 0 V in AC. An edge trigger armed at 1.5 V would never fire
+    after switching to AC, and the sweep would sit "waiting for trigger" on a
+    perfectly good signal. So a coupling change takes one capture and moves the
+    trigger level to the new midpoint, keeping the mode and the direction.
+
+    The range is deliberately left alone. Switching AC back to DC on a narrow
+    range can clip, and the capture's own overrange note says so — silently
+    widening the range would hide the choice from the person who made it.
+    """
+    with session.lock:
+        backend = session.require_open()
+        current = session.channel
+        new_coupling = (coupling or current.coupling).upper()
+        if new_coupling not in COUPLINGS:
+            raise ScopeError(
+                f"coupling must be one of {', '.join(COUPLINGS)}, got {coupling!r}."
+            )
+        applied = backend.set_channel(
+            ChannelConfig(
+                range_v if range_v is not None else current.range_v,
+                new_coupling,
+                enabled if enabled is not None else current.enabled,
+            )
+        )
+        session.channel = applied
+        reply = {
+            "range_v": applied.range_v,
+            "coupling": applied.coupling,
+            "enabled": applied.enabled,
+            "requested_range_v": range_v,
+            "available_ranges_v": list(session.device.voltage_ranges_v),  # type: ignore[union-attr]
+        }
+
+        if applied.coupling != current.coupling:
+            # The captures that find the new level must not wait for the old
+            # one. After AC → DC an edge trigger at -0.02 V never fires on a
+            # 0..3 V signal, and in NORMAL mode the capture waited for it and
+            # the switch failed (measured). Survey free-running, as autoset does,
+            # then give the user's mode back around the new level.
+            trigger = session.trigger
+            backend.set_trigger(TriggerConfig(mode="auto"))
+            try:
+                stats, settled = _settled_capture(session, applied.range_v)
+            except ScopeError:
+                backend.set_trigger(trigger)  # never leave it free-running
+                raise
+            level = round_sig((stats["vmin_v"] + stats["vmax_v"]) / 2, 5)
+            reply["trigger"] = set_trigger(
+                session,
+                mode=trigger.mode,
+                threshold_v=level,
+                direction=trigger.direction,
+                delay_pct=trigger.delay_pct,
+                auto_trigger_ms=trigger.auto_trigger_ms,
+            )
+            reply["overrange"] = stats["overrange"]
+            reply["settled"] = settled
+            reply["note"] = (
+                f"Coupling {current.coupling} → {applied.coupling}; trigger level "
+                f"moved to {level:.4g} V, the new midpoint of the signal."
+                + (" The signal now clips on this range — widen it or run autoset."
+                   if stats["overrange"] else "")
+                + ("" if settled else
+                   f" The input had not settled after {SETTLE_TIMEOUT_S:g} s, so the"
+                   " level may be off; drag it or run autoset.")
+            )
+        return reply
+
+
+def _settled_capture(session: ScopeSession, range_v: float) -> tuple[dict, bool]:
+    """Capture until the signal's midpoint stops moving. Returns (stats, settled).
+
+    Called with the session lock held. The tolerance is in ADC steps of the
+    current range, because "stopped moving" means "no longer resolvable as
+    moving", and that is a property of the range, not a fixed voltage.
+    """
+    backend = session.require_open()
+    tolerance = SETTLE_LSB * (2 * range_v / 256)
+    deadline = time.monotonic() + SETTLE_TIMEOUT_S
+    previous: float | None = None
+    while True:
+        capture = backend.capture_block(0.02, 4096)
+        capture.capture_id = session.next_capture_id()
+        session.store(capture)
+        stats = measure(capture)
+        mid = (stats["vmin_v"] + stats["vmax_v"]) / 2
+        if previous is not None and abs(mid - previous) <= tolerance:
+            return stats, True
+        if time.monotonic() > deadline:
+            return stats, False
+        previous = mid
+        time.sleep(SETTLE_INTERVAL_S)
 
 
 def stop_for_shutdown() -> None:
@@ -423,7 +547,9 @@ class SweepRunner:
     def _one_sweep(self) -> dict:
         with self.session.lock:
             backend = self.session.require_open()
-            capture = backend.capture_block(self._window_s, SWEEP_SAMPLES)
+            capture = backend.capture_block(
+                self._window_s, SWEEP_SAMPLES, max_wait_s=SWEEP_TRIGGER_WAIT_S
+            )
             capture.capture_id = self.session.next_capture_id()
             self.session.store(capture)
             return measure(capture)

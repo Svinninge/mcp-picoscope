@@ -91,9 +91,23 @@ def test_clipping_is_reported_not_hidden():
     assert "clips" in stats["note"]
 
 
-def test_ac_coupling_removes_the_offset():
-    cap = capture(MockSignal("sine", 1000.0, 1.0, offset_v=2.0, noise_v=0.0),
-                  coupling="AC")
+def test_ac_coupling_removes_the_offset_once_settled():
+    """AC coupling is a capacitor: the DC decays away, it does not vanish.
+
+    This test used to capture straight after switching and expect a mean of zero
+    — the instant behaviour the mock then had, and the hardware does not. The
+    PS2104 settles with a time constant near 0.12 s, so wait well past it.
+    """
+    import time
+
+    from mcp_picoscope.backends.mock import AC_SETTLE_TAU_S
+
+    backend = MockBackend(MockSignal("sine", 1000.0, 1.0, offset_v=2.0, noise_v=0.0))
+    backend.open()
+    backend.set_channel(ChannelConfig(5.0, "AC", True))
+    time.sleep(10 * AC_SETTLE_TAU_S)
+    cap = backend.capture_block(0.01, 8192)
+    cap.capture_id = "test"
     assert measure(cap)["mean_v"] == pytest.approx(0.0, abs=0.05)
 
 

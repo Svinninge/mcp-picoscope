@@ -1,6 +1,6 @@
 <!doctype html>
-<!-- File version: v0.11 -->
-<html lang="sv">
+<!-- File version: v0.12 -->
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -142,6 +142,7 @@
     <button id="single" class="action" title="A single sweep">Single</button>
     <button id="stop" class="action" title="Stop the sweep">Stop</button>
     <button id="slope" class="action" title="Trigger edge">↑</button>
+    <button id="coupling" class="action" title="DC shows the true voltage; AC removes the DC level and centres the signal on 0 V">DC</button>
   </div>
   <div class="zoom">
     <button id="zoom-out" title="Smaller (Ctrl+-)">−</button>
@@ -295,6 +296,7 @@ let triggerLevel = 0;
 let triggerDirection = "rising";
 let triggerMode = "auto";
 let rangeV = 5;
+let coupling = "DC";
 let dragging = false;
 
 async function control(query, label) {
@@ -314,6 +316,16 @@ const sweepModes = { run: "auto", normal: "normal", single: "single", stop: "sto
 for (const [id, mode] of Object.entries(sweepModes)) {
   sweepButtons[id].onclick = () => control("action=sweep&mode=" + mode, "Sweep");
 }
+
+const couplingButton = document.getElementById("coupling");
+
+couplingButton.onclick = async () => {
+  const next = coupling === "DC" ? "AC" : "DC";
+  couplingButton.disabled = true;
+  const body = await control("action=coupling&value=" + next, "Coupling");
+  if (body && body.ok && body.note) flash(body.note);
+  couplingButton.disabled = false;
+};
 
 slopeButton.onclick = () => {
   triggerDirection = triggerDirection === "rising" ? "falling" : "rising";
@@ -423,6 +435,7 @@ function draw() {
   ctx.beginPath();
   ctx.moveTo(0, Math.round(h / 2) + .5); ctx.lineTo(w, Math.round(h / 2) + .5);
   ctx.stroke();
+  drawGround(w, h);
 
   if (!latest || !latest.curve || latest.curve.length < 2) {
     ctx.fillStyle = "#8b98a5";
@@ -466,22 +479,47 @@ function drawTrigger(w, h) {
   ctx.setLineDash([]);
 
   // The handle is what says "this line can be dragged" — a dashed line alone
-  // reads as a measurement annotation.
+  // reads as a measurement annotation. It sits at the RIGHT edge, as the trigger
+  // marker does on a bench scope: the left edge belongs to the 0 V marker, and
+  // in AC coupling the trigger level lands near 0 V, where the two would sit on
+  // top of each other.
   ctx.fillStyle = dragging ? "#f0a13a" : "#8a6a2a";
   ctx.beginPath();
-  ctx.moveTo(0, y - 6);
-  ctx.lineTo(11, y);
-  ctx.lineTo(0, y + 6);
+  ctx.moveTo(w, y - 6);
+  ctx.lineTo(w - 11, y);
+  ctx.lineTo(w, y + 6);
   ctx.closePath();
   ctx.fill();
 
   ctx.fillStyle = dragging ? "#f0a13a" : "#8b98a5";
   ctx.font = "11px 'Segoe UI', sans-serif";
+  ctx.textAlign = "right";
   const arrow = triggerDirection === "rising" ? "↑" : "↓";
   const label = armed
-    ? `${triggerLevel.toFixed(3)} V ${arrow}`
-    : `${triggerLevel.toFixed(3)} V ${arrow} (drag to arm)`;
-  ctx.fillText(label, 16, y - 4);
+    ? `T ${triggerLevel.toFixed(3)} V ${arrow}`
+    : `T ${triggerLevel.toFixed(3)} V ${arrow} (drag to arm)`;
+  ctx.fillText(label, w - 16, y - 4);
+  ctx.restore();
+}
+
+function drawGround(w, h) {
+  // The channel's ground marker, as on a bench scope: a pointer at the left edge
+  // where 0 V is. The ranges are symmetric, so today that is always the centre
+  // line — but a centre line says nothing about what it means, and in DC
+  // coupling a 0..3 V signal floating above it looks like an offset error until
+  // something says where zero is.
+  const y = levelToY(0);
+  ctx.save();
+  ctx.fillStyle = "#3fe08f";
+  ctx.beginPath();
+  ctx.moveTo(0, y - 7);
+  ctx.lineTo(13, y);
+  ctx.lineTo(0, y + 7);
+  ctx.closePath();
+  ctx.fill();
+  ctx.font = "11px 'Segoe UI', sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`0 V  ${coupling}`, 18, y + 14);
   ctx.restore();
 }
 
@@ -599,7 +637,15 @@ async function poll() {
     triggerMode = s.trigger.mode;
     slopeButton.textContent = triggerDirection === "rising" ? "↑" : "↓";
   }
-  if (s.channel) rangeV = s.channel.range_v;
+  if (s.channel) {
+    rangeV = s.channel.range_v;
+    coupling = s.channel.coupling;
+    couplingButton.textContent = coupling;
+    // AC is the non-default, so it is the one worth highlighting: it hides the
+    // DC level, and that should never be a surprise.
+    couplingButton.classList.toggle("on", coupling === "AC");
+  }
+  couplingButton.disabled = !s.open;
 
   const sweeping = s.sweep && s.sweep.running ? s.sweep.mode : "stop";
   for (const [id, mode] of Object.entries(sweepModes)) {
