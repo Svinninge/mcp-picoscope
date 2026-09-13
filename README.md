@@ -120,7 +120,7 @@ server. Use one example or the other, not both.
 | `configure_mock_signal(...)` | What the mock generates: sine, square, ramp, triangle, noise, dc. |
 | `capture_block(duration_s, samples)` | Capture one block → statistics + decimated curve + capture id. |
 | `measure(capture_id)` | Vpp, Vmin/Vmax, mean, RMS, frequency, period, duty cycle. |
-| `export_capture(capture_id, format)` | `csv` \| `npz` \| `png` → path. |
+| `export_capture(capture_id, format, name)` | `csv` \| `npz` \| `png` → path. `name` is optional; it is cleaned of path characters and never overwrites. |
 | `autoset()` | Picks a range and timebase that show the signal, and puts the trigger level at half of peak-to-peak. Hunts across timebases fast → slow, so anything from 50 Hz to 1 MHz is found. |
 | `start_sweep(mode, window_s)` | Capture continuously. `auto` sweeps regardless of the trigger, `normal` only on a real trigger, `single` once. |
 | `stop_sweep()` | Stop the sweep. |
@@ -153,6 +153,8 @@ and falling edge.
 **time/div.** `◀` and `▶` step a 1-2-5 sequence from 10 µs to 20 ms per division; `Auto` hands the timebase back. The screen spans exactly ten of the chosen divisions: the driver only has power-of-two timebases and captures up to 1.7× more than asked, and the extra is not drawn. The label turns orange while the timebase is manual, because that is the one state in which the scope will not adapt if the signal changes. Autoset also takes the timebase back.
 
 A timebase that is too slow for the signal does not fail; it **aliases**, and an alias looks entirely plausible. Stepped up to 20 ms/div on a 10 kHz square wave, the scope measured a steady 2 206 Hz. So a manual timebase that leaves fewer than ten samples per period warns under the trace, and the warning is computed from the last frequency measured on a timebase chosen to resolve it — never from the capture on screen, which may be the alias itself.
+
+**Screenshot.** Freezes the screen at the click and asks for a name, pre-filled with `capture-YYYYMMDD-HHMMSS`; Enter saves, Esc cancels. The image is the trace as shown plus a line of settings (V/div, time/div, range, coupling, trigger) and the readouts, so it explains itself. It lands in `captures/` — the name cannot reach outside it, and an existing file gets a `-2` suffix rather than being overwritten. The sweep keeps running.
 
 **volt/div.** `▼` and `▲` step through the device's own ranges (±100 mV to ±20 V, shown as 25 mV/div to 5 V/div over eight divisions). There is no gain between ranges, so there is no 1-2-5 sequence to pretend to.
 

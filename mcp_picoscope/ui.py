@@ -1,4 +1,4 @@
-# File version: v0.05
+# File version: v0.06
 """Local scope display, opened in an Edge app window when the server is used.
 
 The MCP session sees numbers; a person wants to see the waveform. This serves
@@ -47,6 +47,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import version_line
 from .analysis import downsample_minmax, measure
+from .export import save_screenshot
 from .scope import ScopeError
 
 log = logging.getLogger(__name__)
@@ -526,6 +527,10 @@ def _ui_state() -> dict:
 # implementation, one lock, and a result the session can report afterwards.
 CONTROLS = ("autoset", "trigger", "sweep", "coupling", "timebase", "range")
 
+# A screenshot of a large window at 300 % scaling is a few MB; this is headroom,
+# not a target, and keeps a runaway request from filling the disk.
+MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024
+
 
 def run_control(action: str, values: dict) -> dict:
     """Perform a control action on behalf of the page."""
@@ -631,8 +636,29 @@ class _Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/control":
             self._control(parse_qs(parsed.query))
+        elif parsed.path == "/screenshot":
+            self._screenshot(parse_qs(parsed.query))
         else:
             self.send_error(404)
+
+    def _screenshot(self, query: dict) -> None:
+        """Store the image the page rendered. Not a CONTROL: it touches neither
+        the scope nor the sweep, only writes a file under the capture directory."""
+        name = (query.get("name") or [""])[0]
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if not 0 < length <= MAX_SCREENSHOT_BYTES:
+                raise ScopeError("The screenshot is empty or too large.")
+            path = save_screenshot(self.rfile.read(length), name)
+            record("screenshot", "ok", path.name)
+            body = {"ok": True, "path": str(path), "name": path.name}
+        except ScopeError as exc:
+            record("screenshot", "fel", str(exc))
+            body = {"ok": False, "error": str(exc)}
+        except OSError as exc:
+            log.exception("screenshot failed")
+            body = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        self._send(json.dumps(body).encode("utf-8"), "application/json", cache=False)
 
     def _control(self, query: dict) -> None:
         """Run an action for the page, answering with why not rather than 500."""

@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.14 -->
+<!-- File version: v0.15 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -73,6 +73,20 @@
     font-variant-numeric: tabular-nums; color: var(--ink);
   }
   .tb-label.manual { color: var(--warn); }
+  .scale-gap { width: 10px; }
+  /* Floats under the header so opening it never reflows the controls. */
+  header { position: relative; }
+  .shot-form {
+    position: absolute; right: var(--pad); top: 100%; z-index: 5;
+    display: flex; gap: 4px; align-items: center; padding: 6px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 4px;
+  }
+  .shot-form[hidden] { display: none; }
+  .shot-form input {
+    width: 220px; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; font-size: 12px;
+  }
+  .shot-form input:focus { outline: none; border-color: var(--ok); }
   #screen.dragging { cursor: ns-resize; }
 
   main {
@@ -165,13 +179,18 @@
     <button id="v-down" class="action" title="Fewer volts per division — a taller trace">▼</button>
     <span id="v-label" class="tb-label" title="Volts per division: the channel range over four">—</span>
     <button id="v-up" class="action" title="More volts per division — room for a bigger signal">▲</button>
-  </div>
-  <div class="timebase">
+    <span class="scale-gap"></span>
     <button id="tb-down" class="action" title="Shorter time per division — zoom in on time">◀</button>
     <span id="tb-label" class="tb-label" title="Time per division on screen">—</span>
     <button id="tb-up" class="action" title="Longer time per division — see more periods">▶</button>
     <button id="tb-auto" class="action" title="Let the timebase follow the signal again">Auto</button>
   </div>
+  <button id="shot" class="action" title="Save the trace as an image under captures/, with a name you choose">Screenshot</button>
+  <form id="shot-form" class="shot-form" hidden>
+    <input id="shot-name" type="text" spellcheck="false" maxlength="80" aria-label="Screenshot name">
+    <button type="submit" class="action">Save</button>
+    <button type="button" id="shot-cancel" class="action" title="Esc">✕</button>
+  </form>
   <div class="zoom">
     <button id="zoom-out" title="Smaller (Ctrl+-)">−</button>
     <button id="zoom-reset" class="wide" title="Reset zoom">100%</button>
@@ -386,6 +405,97 @@ let shownSpan = null;
 tbDown.onclick = () => control("action=timebase&step=-1", "Timebase");
 tbUp.onclick = () => control("action=timebase&step=1", "Timebase");
 tbAuto.onclick = () => control("action=timebase&value=auto", "Timebase");
+
+// -- screenshot (issue #6) --------------------------------------------------
+// The picture is frozen at the click, not at Save: the sweep keeps running
+// while the name is typed, and the image must be what was on screen when the
+// button was pressed. The page renders it — the canvas is exactly what the
+// user saw — and the server only validates the name and writes the file.
+const shotButton = document.getElementById("shot");
+const shotForm = document.getElementById("shot-form");
+const shotName = document.getElementById("shot-name");
+let shotImage = null;
+
+function stamp(d) {
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-` +
+    `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+function composeShot() {
+  // The trace plus the text that makes it a measurement: scale, settings and
+  // the readouts, so the file explains itself without the window around it.
+  const k = canvas.width / (viewW || canvas.width);
+  const w = canvas.width;
+  const band = Math.round(26 * k);
+  const cells = [...document.querySelectorAll("#readouts .readout")]
+    .map(el => `${el.querySelector(".k").textContent} ${el.querySelector(".v").textContent}`);
+  const note = document.getElementById("capnote").textContent;
+  const out = document.createElement("canvas");
+  out.width = w;
+  out.height = canvas.height + band * (note ? 3 : 2);
+  const g = out.getContext("2d");
+  g.fillStyle = "#070b10";
+  g.fillRect(0, 0, out.width, out.height);
+  g.drawImage(canvas, 0, band);
+  g.textBaseline = "middle";
+  g.font = `${Math.round(12 * k)}px 'Segoe UI', sans-serif`;
+
+  const pad = Math.round(8 * k);
+  const trig = `trigger ${triggerMode} ${triggerLevel} V ` +
+    (triggerDirection === "rising" ? "↑" : "↓");
+  g.fillStyle = "#e6edf3";
+  g.textAlign = "left";
+  g.fillText(`PicoScope · ${vLabel.textContent} · ${tbLabel.textContent} · ` +
+    `±${rangeV} V ${coupling} · ${trig}`, pad, band / 2);
+  g.fillStyle = "#8b98a5";
+  g.textAlign = "right";
+  g.fillText(new Date().toLocaleString() + (latest ? ` · ${latest.capture_id}` : ""),
+    w - pad, band / 2);
+
+  g.textAlign = "left";
+  g.fillStyle = "#e6edf3";
+  g.fillText(cells.join("   ·   "), pad, canvas.height + band * 1.5);
+  if (note) {
+    g.fillStyle = "#e3b341";
+    g.fillText(note, pad, canvas.height + band * 2.5);
+  }
+  return out;
+}
+
+function closeShot() {
+  shotForm.hidden = true;
+  shotImage = null;
+}
+
+shotButton.onclick = () => {
+  shotImage = composeShot();
+  shotName.value = "capture-" + stamp(new Date());
+  shotForm.hidden = false;
+  shotName.focus();
+  shotName.select();
+};
+
+document.getElementById("shot-cancel").onclick = closeShot;
+shotName.addEventListener("keydown", e => { if (e.key === "Escape") closeShot(); });
+
+shotForm.onsubmit = async e => {
+  e.preventDefault();
+  const image = shotImage;
+  const name = shotName.value;
+  closeShot();
+  if (!image) return;
+  try {
+    const blob = await new Promise(resolve => image.toBlob(resolve, "image/png"));
+    const r = await fetch("/screenshot?name=" + encodeURIComponent(name), {
+      method: "POST", headers: { "Content-Type": "image/png" }, body: blob,
+    });
+    const body = await r.json();
+    flash(body.ok ? "Saved " + body.path : "Screenshot failed: " + body.error);
+  } catch (err) {
+    flash("Screenshot could not reach the server.");
+  }
+};
 
 const couplingButton = document.getElementById("coupling");
 
@@ -615,7 +725,6 @@ function readouts(m) {
     ["p2", "Mean", fmt(m.mean_v, "V")],
     ["p3", "RMS", fmt(m.rms_v, "V")],
     ["p3", "Duty", m.duty_cycle_pct == null ? "—" : m.duty_cycle_pct.toFixed(1) + " %"],
-    ["p3", "Sample rate", eng(m.sample_rate_hz).replace("Hz", "S/s")],
   ];
   document.getElementById("readouts").innerHTML = cells
     .map(([p, k, v]) =>
@@ -761,9 +870,8 @@ async function poll() {
     readouts(m);
     const perDiv = (shownSpan || m.duration_s) / GRID_X;
     document.getElementById("divs").textContent =
-      `${(m.range_v / (GRID_Y / 2)).toPrecision(3)} V/div · ` +
-      `${(perDiv * 1e3).toPrecision(3)} ms/div · ${m.samples} samples · ` +
-      `${s.latest.capture_id}`;
+      `${voltsPerDivText(m.range_v)} · ${perDivText(perDiv)} · ` +
+      `${m.samples} samples · ${s.latest.capture_id}`;
     if (Date.now() > flashUntil) {
       // One place decides the note, most important first; setting it in several
       // places let the capture's empty note wipe the aliasing warning.

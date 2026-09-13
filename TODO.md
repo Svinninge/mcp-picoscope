@@ -10,6 +10,12 @@ Newest first.
 
 ## 2026-09-13
 
+**Screenshot button — issue #6.** Saves the trace with a chosen name under
+`captures/`; `export_capture` takes the same optional `name` through the same
+cleaning. Checked on the hardware against a 1 kHz sine. Also: volt/div and
+time/div now sit in one header group so they wrap together, and the sample-rate
+readout is gone — it jumped with every timebase change and said little.
+
 **time/div, second pass, and volt/div.** Used for real, the first version felt broken: the label never landed on the step clicked (131 µs/div for 100), and with the generator moved to 1 MHz a 562 kHz alias raised no warning — the reference was still autoset's 10 kHz, and the page wiped the warning with the capture's empty note anyway. Now the screen spans exactly the chosen divisions, a faster resolved frequency raises the reference, and the note has one priority order. `▼ ▲` step the channel range. Verified on the hardware at 1 MHz: 20 µs/div exact, 2.5 V/div at ±10 V, warning shown at 100 µs/div.
 
 **time/div in the display — issue #1 complete.** `◀ ▶` step a 1-2-5 sequence,

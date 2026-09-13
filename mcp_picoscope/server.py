@@ -1,4 +1,4 @@
-# File version: v0.04
+# File version: v0.05
 """MCP surface for the PicoScope. Thin: it translates, it does not compute.
 
 Every tool answers with a summary — statistics, a decimated curve, a file path —
@@ -288,10 +288,15 @@ def measure(capture_id: str) -> dict:
 
 
 @tool
-def export_capture(capture_id: str, format: str = "csv") -> dict:
-    """Write a capture to disk. format: 'csv' | 'npz' | 'png'. Returns the path."""
+def export_capture(capture_id: str, format: str = "csv", name: str = "") -> dict:
+    """Write a capture to disk. format: 'csv' | 'npz' | 'png'. Returns the path.
+
+    name is an optional file name (no folder): it is cleaned of path characters,
+    always lands in the capture directory, and gets a -2, -3 suffix rather than
+    overwrite an existing file. Without it the capture id is used.
+    """
     capture = session.get_capture(capture_id)
-    path = export_file(capture, format)
+    path = export_file(capture, format, name)
     return {
         "capture_id": capture_id,
         "format": format,

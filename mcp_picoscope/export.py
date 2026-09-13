@@ -1,4 +1,4 @@
-# File version: v0.01
+# File version: v0.02
 """Capture export: CSV, NPZ and PNG.
 
 Files land under the capture directory (CAPTURE_DIR, default ./captures). The
@@ -8,6 +8,7 @@ LLM never supplies a path — it picks a format and gets a path back.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import numpy as np
@@ -25,11 +26,60 @@ def capture_dir() -> Path:
     return path
 
 
-def export(capture: Capture, fmt: str) -> Path:
+# Windows refuses these as file names whatever the extension — "con.png" is
+# the console, not a picture.
+_RESERVED = {"con", "prn", "aux", "nul"} | {f"{p}{i}" for p in ("com", "lpt") for i in range(1, 10)}
+MAX_NAME = 80
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def safe_name(name: str) -> str:
+    """A user's name for a file, reduced to something that can only be a name.
+
+    The name is input that becomes a path: separators, drive colons, '..' and
+    the characters Windows rejects are replaced, so whatever arrives, the file
+    lands directly in the capture directory.
+    """
+    stem = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", (name or "").strip())
+    stem = re.sub(r"\.(png|csv|npz)$", "", stem, flags=re.IGNORECASE)
+    stem = stem.strip(" ._")[:MAX_NAME].strip(" ._")
+    if not stem:
+        raise ScopeError("The name is empty once path characters are removed.")
+    if stem.split(".")[0].lower() in _RESERVED:
+        stem = "_" + stem
+    return stem
+
+
+def unique_path(stem: str, ext: str) -> Path:
+    """A path in the capture directory that does not exist yet: never overwrite."""
+    folder = capture_dir()
+    target = folder / f"{stem}.{ext}"
+    n = 2
+    while target.exists():
+        target = folder / f"{stem}-{n}.{ext}"
+        n += 1
+    if target.resolve().parent != folder:
+        raise ScopeError("Refusing to write outside the capture directory.")
+    return target
+
+
+def save_screenshot(png: bytes, name: str) -> Path:
+    """Store an image the display rendered — the trace exactly as it was shown."""
+    if not png.startswith(PNG_SIGNATURE):
+        raise ScopeError("The screenshot is not a PNG image.")
+    target = unique_path(safe_name(name), "png")
+    target.write_bytes(png)
+    return target
+
+
+def export(capture: Capture, fmt: str, name: str = "") -> Path:
     fmt = fmt.lower()
     if fmt not in FORMATS:
         raise ScopeError(f"Unknown format {fmt!r}. Valid: {', '.join(FORMATS)}.")
-    target = capture_dir() / f"{capture.capture_id}.{fmt}"
+    if name:
+        target = unique_path(safe_name(name), fmt)
+    else:
+        target = capture_dir() / f"{capture.capture_id}.{fmt}"
     if fmt == "csv":
         _write_csv(capture, target)
     elif fmt == "npz":

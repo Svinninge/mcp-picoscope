@@ -129,7 +129,7 @@ Claude (MCP client)
 | `capture_block(duration_s, samples)` | Capture one block. Returns statistics + decimated curve + capture id. |
 | `capture_streaming(duration_s, rate)` | Slow continuous acquisition to file. *(Not built — v2.)* |
 | `measure(capture_id)` | Vpp, Vmin, Vmax, mean, RMS, frequency, period, duty cycle. |
-| `export_capture(capture_id, format)` | `csv` \| `npz` \| `png`. Returns the path. |
+| `export_capture(capture_id, format, name)` | `csv` \| `npz` \| `png`, optionally under a chosen name. Returns the path. |
 | `start_sweep(mode, window_s)` / `stop_sweep()` | Continuous acquisition in its own thread: `auto`, `normal`, `single`. The lock is taken per capture, never across the loop. |
 | `set_time_per_div(time_per_div_s)` | Manual timebase in seconds per division, `0` for auto. Warns when a manual timebase may alias. |
 | `autoset()` | Tries voltage ranges and timebases until the signal fills the screen sensibly — what the "AutoSetup" button does. The ladder runs **fast → slow** and a frequency is believed only at ≥10 samples per period; the opposite direction produced an alias (11.8 kHz reported as 406 Hz). It also hands its window to a running sweep and sets the trigger level to half of peak-to-peak. Also a button in the display. |

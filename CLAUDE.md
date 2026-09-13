@@ -207,6 +207,8 @@ nothing else.
 
 **A manual capture may raise the alias reference, never lower it.** An alias reads lower than the signal, so a higher frequency with ≥ 10 samples per period is the signal itself. Without this the reference stayed at 10 kHz after the generator went to 1 MHz, and a 562 kHz alias at 0.2 ms/div raised no warning (`_raise_reference`).
 
+**A screenshot is frozen at the click, not at Save.** The sweep keeps running while the name is typed, so the image is composed when the button is pressed. The page renders it (the canvas is what the user saw) and `POST /screenshot` only checks the PNG signature, cleans the name with `export.safe_name` and writes through `unique_path`. It is not in `CONTROLS`: it touches neither the scope nor the sweep.
+
 **The capture note is decided in one place.** The alias warning was set, then wiped by the capture's empty note a few lines further down the same poll. Priority: timebase warning, sweep error, capture note.
 
 **The header wraps rather than clips.** With `flex-wrap: nowrap` and `overflow: hidden`, the time/div controls ran off the right edge of a 941 px window — the default on a 300 %-scaled display. Passive labels (clock, version, device) are dropped first by breakpoints; a second row is the last resort.

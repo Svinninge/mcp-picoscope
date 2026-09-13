@@ -763,3 +763,79 @@ def test_the_volt_div_buttons_run_the_same_code_as_the_tool_path(monkeypatch):
     ui.run_control("range", {"step": ["1"]})
     ui.run_control("range", {"step": ["-1"]})
     assert calls == [1, -1]
+
+
+# -- screenshot (issue #6) ------------------------------------------------
+# The name is user input that becomes a path. Whatever arrives, the file lands
+# directly in the capture directory and never overwrites an earlier one.
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 16
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("scope test", "scope test"),
+        ("../../evil", "evil"),
+        (r"C:\Windows\x", "C_Windows_x"),
+        ("a<b>|c?.PNG", "a_b_c"),
+        ("con", "_con"),
+        ("lpt1.backup", "_lpt1.backup"),
+    ],
+)
+def test_a_screenshot_name_can_only_be_a_name(name, expected):
+    from mcp_picoscope.export import safe_name
+
+    assert safe_name(name) == expected
+
+
+def test_an_empty_screenshot_name_is_refused():
+    from mcp_picoscope.export import safe_name
+    from mcp_picoscope.scope import ScopeError
+
+    with pytest.raises(ScopeError):
+        safe_name(" /.. ")
+
+
+def test_a_screenshot_never_overwrites_and_never_leaves_the_folder(tmp_path, monkeypatch):
+    from mcp_picoscope.export import save_screenshot
+
+    monkeypatch.setenv("CAPTURE_DIR", str(tmp_path))
+    first = save_screenshot(PNG, "../trace")
+    second = save_screenshot(PNG, "trace")
+    assert first == tmp_path / "trace.png"
+    assert second == tmp_path / "trace-2.png"
+    assert first.read_bytes() == PNG
+
+
+def test_a_screenshot_must_be_a_png(tmp_path, monkeypatch):
+    from mcp_picoscope.export import save_screenshot
+    from mcp_picoscope.scope import ScopeError
+
+    monkeypatch.setenv("CAPTURE_DIR", str(tmp_path))
+    with pytest.raises(ScopeError):
+        save_screenshot(b"<html>", "x")
+    assert not list(tmp_path.iterdir())
+
+
+def test_the_page_posts_a_screenshot_and_gets_the_path_back(tmp_path, monkeypatch):
+    import threading
+    import urllib.request
+    from http.server import HTTPServer
+
+    monkeypatch.setenv("CAPTURE_DIR", str(tmp_path))
+    server = HTTPServer(("127.0.0.1", 0), ui._Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/screenshot?name=my%20trace",
+            data=PNG, method="POST", headers={"Content-Type": "image/png"},
+        )
+        body = json.loads(urllib.request.urlopen(request, timeout=5).read())
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert body["ok"] and body["name"] == "my trace.png"
+    assert (tmp_path / "my trace.png").read_bytes() == PNG
