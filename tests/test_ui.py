@@ -740,18 +740,53 @@ def test_a_faster_signal_seen_on_a_manual_timebase_raises_the_alias_reference():
     assert "alias" in r._alias_warning(1_562_500.0)
 
 
-def test_volt_div_steps_through_the_device_ranges_and_stops_at_the_ends():
+def test_volt_div_steps_are_round_and_ride_the_narrowest_covering_range():
+    """1.25 V/div was the +-5 V range over four: true, and unreadable."""
     from mcp_picoscope import control
 
     session = sweep_session()
-    ranges = sorted(session.device.voltage_ranges_v)
-    control.configure_channel(session, range_v=ranges[2])
-    assert control.step_range(session, +1)["range_v"] == ranges[3]
-    assert control.step_range(session, -1)["range_v"] == ranges[2]
-    control.configure_channel(session, range_v=ranges[-1])
-    assert control.step_range(session, +1)["range_v"] == ranges[-1]
-    control.configure_channel(session, range_v=ranges[0])
-    assert control.step_range(session, -1)["range_v"] == ranges[0]
+    ranges = session.device.voltage_ranges_v
+    control.configure_channel(session, volts_per_div=1.0)
+    reply = control.step_range(session, +1)
+    assert reply["volts_per_div"] == 2.0
+    assert reply["range_v"] == control.range_for_volts_per_div(ranges, 2.0)
+    assert reply["range_v"] >= 8.0
+    assert control.step_range(session, -1)["volts_per_div"] == 1.0
+    steps = control.volts_per_div_steps(ranges)
+    control.configure_channel(session, volts_per_div=steps[-1])
+    assert control.step_range(session, +1)["volts_per_div"] == steps[-1]
+    control.configure_channel(session, volts_per_div=steps[0])
+    assert control.step_range(session, -1)["volts_per_div"] == steps[0]
+
+
+def test_an_explicit_range_drops_the_round_scale():
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    control.configure_channel(session, volts_per_div=0.5)
+    assert control.configure_channel(session, range_v=5.0)["volts_per_div"] == 1.25
+
+
+def test_autoset_picks_a_round_volt_div_and_time_div():
+    from mcp_picoscope import control
+
+    session = sweep_session()  # 1 kHz, 1 V amplitude
+    control.autoset(session)
+    assert session.volts_per_div in control.VOLTS_PER_DIV_STEPS
+    assert session.volts_per_div * 4 >= 1.0 * control.AUTOSET_HEADROOM
+    latest = next(reversed(session.captures.values()))
+    per_div = latest.duration_s / control.DIVISIONS
+    assert per_div >= 0.5e-3 * 0.999  # 5 periods of 1 kHz, rounded up to 1-2-5
+
+
+@pytest.mark.parametrize(
+    "seconds, expected",
+    [(5.24e-3, 1e-2), (1e-3, 1e-3), (1.3e-4, 2e-4), (3e-5, 5e-5), (0.06, 0.1)],
+)
+def test_the_followed_window_rounds_up_to_ten_1_2_5_divisions(seconds, expected):
+    from mcp_picoscope import control
+
+    assert control._nice_window(seconds) == pytest.approx(expected)
 
 
 def test_the_volt_div_buttons_run_the_same_code_as_the_tool_path(monkeypatch):

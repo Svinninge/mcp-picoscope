@@ -1,4 +1,4 @@
-# File version: v0.01
+# File version: v0.02
 """Scope abstraction: value types, backend protocol and the single owned session.
 
 Shared by server.py and every backend. The driver is not thread safe and the
@@ -109,11 +109,17 @@ class ScopeSession:
     trigger: TriggerConfig = field(default_factory=TriggerConfig)
     captures: OrderedDict[str, Capture] = field(default_factory=OrderedDict)
     lock: threading.RLock = field(default_factory=threading.RLock)
+    # The screen scale. None means the range over four divisions — what an
+    # explicit range_v gets; autoset and the volt/div buttons pick a 1-2-5 step.
+    volts_per_div: float | None = None
     _counter: int = 0
 
     @property
     def is_open(self) -> bool:
         return self.device is not None
+
+    def screen_volts_per_div(self) -> float:
+        return self.volts_per_div or self.channel.range_v / 4
 
     def require_open(self) -> ScopeBackend:
         if self.backend is None or self.device is None:
@@ -152,6 +158,7 @@ class ScopeSession:
                 "range_v": self.channel.range_v,
                 "coupling": self.channel.coupling,
                 "enabled": self.channel.enabled,
+                "volts_per_div": self.screen_volts_per_div(),
             },
             "trigger": {
                 "mode": self.trigger.mode,

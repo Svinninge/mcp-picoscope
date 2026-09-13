@@ -1,4 +1,4 @@
-# File version: v0.03
+# File version: v0.04
 """Actions that change the instrument, shared by the MCP tools and the display.
 
 Autoset is the first thing the page is allowed to do rather than just watch,
@@ -20,6 +20,7 @@ the PS2104 has no signal generator to misuse.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 
@@ -96,9 +97,13 @@ SWEEP_TRIGGER_WAIT_S = 1.0
 
 # Timebase steps in seconds per division, the 1-2-5 sequence of a bench scope.
 # Ten divisions across, so the window is ten times the step. The ends follow
-# the sweep's window limits; the display always shows the timebase the driver
-# actually delivered, which snaps to its own grid and can be up to 2x wider.
+# the sweep's window limits. The followed timebase is rounded up to a 1-2-5
+# step too, and the display draws exactly ten divisions of it.
 DIVISIONS = 10
+# Volts per division on screen, 1-2-5. Eight vertical divisions, four either
+# side of zero; each step is taken on the narrowest range that covers it.
+SCREEN_DIVS_PER_HALF = 4
+VOLTS_PER_DIV_STEPS = (0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0)
 TIME_PER_DIV_STEPS = (
     10e-6, 20e-6, 50e-6,
     100e-6, 200e-6, 500e-6,
@@ -158,7 +163,7 @@ def autoset(session: ScopeSession) -> dict:
 
         duration = AUTOSET_SURVEY_S
         if frequency:
-            duration = AUTOSET_PERIODS / frequency
+            duration = _nice_window(AUTOSET_PERIODS / frequency)
             steps.append(
                 f"measured {frequency:.6g} Hz → {AUTOSET_PERIODS} "
                 f"periods = {duration:.6g} s"
@@ -168,13 +173,23 @@ def autoset(session: ScopeSession) -> dict:
                 "no periodic signal at any timebase; keeping the slowest one"
             )
 
+        # A round volt/div whose screen holds the peaks with headroom, then the
+        # narrowest range that covers that screen.
         peak = peak_v * AUTOSET_HEADROOM
-        chosen = next((r for r in ranges if r >= peak), ranges[-1])
+        steps_v = volts_per_div_steps(ranges)
+        per_div = next(
+            (s for s in steps_v if s * SCREEN_DIVS_PER_HALF >= peak), steps_v[-1]
+        )
+        chosen = range_for_volts_per_div(ranges, per_div)
         applied = backend.set_channel(
             ChannelConfig(chosen, session.channel.coupling, True)
         )
         session.channel = applied
-        steps.append(f"picked ±{applied.range_v} V ({AUTOSET_HEADROOM:g}× headroom)")
+        session.volts_per_div = per_div
+        steps.append(
+            f"picked {per_div:g} V/div on ±{applied.range_v} V "
+            f"({AUTOSET_HEADROOM:g}× headroom)"
+        )
 
         # A running sweep keeps its own window, so autoset has to hand its
         # choice over or the next sweep undoes it a tenth of a second later.
@@ -254,8 +269,12 @@ def configure_channel(
     range_v: float | None = None,
     coupling: str | None = None,
     enabled: bool | None = None,
+    volts_per_div: float | None = None,
 ) -> dict:
     """Set channel A, from either surface. Unset arguments keep their value.
+
+    volts_per_div sets the screen scale and picks the range that covers it; an
+    explicit range_v without it drops back to range/4 on screen.
 
     Changing the coupling moves the signal: a 0..3 V sine has its midpoint at
     1.5 V in DC and at 0 V in AC. An edge trigger armed at 1.5 V would never fire
@@ -270,6 +289,12 @@ def configure_channel(
     with session.lock:
         backend = session.require_open()
         current = session.channel
+        if volts_per_div is not None:
+            if volts_per_div <= 0:
+                raise ScopeError("volts_per_div must be positive.")
+            range_v = range_for_volts_per_div(
+                session.device.voltage_ranges_v, volts_per_div  # type: ignore[union-attr]
+            )
         new_coupling = (coupling or current.coupling).upper()
         if new_coupling not in COUPLINGS:
             raise ScopeError(
@@ -283,8 +308,13 @@ def configure_channel(
             )
         )
         session.channel = applied
+        if volts_per_div is not None:
+            session.volts_per_div = volts_per_div
+        elif range_v is not None:
+            session.volts_per_div = None
         reply = {
             "range_v": applied.range_v,
+            "volts_per_div": session.screen_volts_per_div(),
             "coupling": applied.coupling,
             "enabled": applied.enabled,
             "requested_range_v": range_v,
@@ -718,25 +748,37 @@ def _next_step(current_s: float, direction: int) -> float:
     return below[-1] if below else steps[0]
 
 
-def step_range(session: ScopeSession, direction: int) -> dict:
-    """One range up (+1, more volts per division) or down (-1) from the current.
+def range_for_volts_per_div(ranges, volts_per_div: float) -> float:
+    """The narrowest device range that holds the whole screen at this scale."""
+    full_scale = volts_per_div * SCREEN_DIVS_PER_HALF
+    return next((r for r in sorted(ranges) if r >= full_scale * (1 - 1e-9)), max(ranges))
 
-    The display has eight vertical divisions, so volts/div is the full-scale
-    range over four. The steps are the device's own ranges — 100 mV to 20 V on
-    the PS2104 — rather than an invented 1-2-5 sequence, because the driver has
-    no analogue gain in between: a label between ranges would be a lie.
+
+def volts_per_div_steps(ranges) -> tuple[float, ...]:
+    """The 1-2-5 steps this device can show: a range must cover the screen."""
+    top = max(ranges)
+    return tuple(s for s in VOLTS_PER_DIV_STEPS if s * SCREEN_DIVS_PER_HALF <= top * (1 + 1e-9))
+
+
+def step_range(session: ScopeSession, direction: int) -> dict:
+    """One volt/div step up (+1, a smaller trace) or down (-1).
+
+    The steps are 1-2-5 — 1.25 V/div was the ±5 V range over four divisions,
+    true and unreadable. The screen scale is chosen, and the hardware range is
+    the narrowest one that covers it: ±4 V on screen is taken on the ±5 V range.
     """
     with session.lock:
         session.require_open()
-        ranges = sorted(session.device.voltage_ranges_v)  # type: ignore[union-attr]
-        current = session.channel.range_v
+        ranges = session.device.voltage_ranges_v  # type: ignore[union-attr]
+        current = session.volts_per_div or session.channel.range_v / SCREEN_DIVS_PER_HALF
+    steps = volts_per_div_steps(ranges)
     if direction > 0:
-        wider = [r for r in ranges if r > current * (1 + 1e-9)]
-        target = wider[0] if wider else ranges[-1]
+        up = [s for s in steps if s > current * (1 + 1e-9)]
+        target = up[0] if up else steps[-1]
     else:
-        narrower = [r for r in ranges if r < current * (1 - 1e-9)]
-        target = narrower[-1] if narrower else ranges[0]
-    return configure_channel(session, range_v=target)
+        down = [s for s in steps if s < current * (1 - 1e-9)]
+        target = down[-1] if down else steps[0]
+    return configure_channel(session, volts_per_div=target)
 
 
 def set_time_per_div(session: ScopeSession, per_div_s: float | None) -> dict:
@@ -752,8 +794,27 @@ def step_time_per_div(session: ScopeSession, direction: int) -> dict:
     return runner(session).status()
 
 
+def _nice_up(value: float) -> float:
+    """The nearest 1-2-5 number at or above value: 524 µs becomes 1 ms."""
+    exponent = math.floor(math.log10(value))
+    for mantissa in (1, 2, 5, 10):
+        candidate = mantissa * 10.0**exponent
+        if candidate >= value * (1 - 1e-9):
+            return float(f"{candidate:.6g}")
+    return float(f"{10.0 ** (exponent + 1):.6g}")
+
+
+def _nice_window(seconds: float) -> float:
+    """A window of ten 1-2-5 divisions, never shorter than asked.
+
+    The followed timebase used to label the screen 524 µs/div — correct, and
+    unreadable. Rounding up only ever shows more periods, which is safe.
+    """
+    return _nice_up(seconds / DIVISIONS) * DIVISIONS
+
+
 def _clamp_window(seconds: float) -> float:
-    return max(SWEEP_MIN_WINDOW_S, min(SWEEP_MAX_WINDOW_S, seconds))
+    return max(SWEEP_MIN_WINDOW_S, min(SWEEP_MAX_WINDOW_S, _nice_window(seconds)))
 
 
 _runner: SweepRunner | None = None

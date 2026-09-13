@@ -207,9 +207,16 @@ def open_ui(force: bool = False) -> dict:
 
 @tool
 def configure_channel(
-    range_v: float = 5.0, coupling: str = "DC", enabled: bool = True
+    range_v: float = 5.0,
+    coupling: str = "DC",
+    enabled: bool = True,
+    volts_per_div: float = 0.0,
 ) -> dict:
     """Set channel A. range_v is full scale in volts (±), coupling 'DC' or 'AC'.
+
+    volts_per_div (> 0) sets a round screen scale instead — 0.02 to 5 V/div over
+    eight divisions — and picks the narrowest range that covers it, ignoring
+    range_v. The display's volt/div buttons use this.
 
     The device snaps to the smallest range that holds range_v; the reply says
     which one it picked. Changing the coupling moves the signal's midpoint (a
@@ -218,6 +225,10 @@ def configure_channel(
     """
     # The display's AC/DC button runs this same function, so a coupling change
     # moves the trigger level the same way whoever asks for it.
+    if volts_per_div > 0:
+        return control.configure_channel(
+            session, None, coupling, enabled, volts_per_div=volts_per_div
+        )
     return control.configure_channel(session, range_v, coupling, enabled)
 
 

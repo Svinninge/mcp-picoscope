@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.15 -->
+<!-- File version: v0.16 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -343,6 +343,9 @@ let triggerLevel = 0;
 let triggerDirection = "rising";
 let triggerMode = "auto";
 let rangeV = 5;
+// Volts from the centre line to the top edge: four round divisions, which
+// may be less than the hardware range the trace was taken on.
+let screenV = 5;
 let coupling = "DC";
 let dragging = false;
 
@@ -526,12 +529,12 @@ function sendTrigger() {
 const GRAB_PX = 12;
 
 function levelToY(level) {
-  return viewH / 2 - (level / rangeV) * (viewH / 2);
+  return viewH / 2 - (level / screenV) * (viewH / 2);
 }
 
 function yToLevel(y) {
-  const level = ((viewH / 2 - y) / (viewH / 2)) * rangeV;
-  return Math.max(-rangeV, Math.min(rangeV, level));
+  const level = ((viewH / 2 - y) / (viewH / 2)) * screenV;
+  return Math.max(-screenV, Math.min(screenV, level));
 }
 
 function pointerY(event) {
@@ -623,9 +626,9 @@ function draw() {
     ctx.fillText("no capture yet", 10, 18);
     return;
   }
-  // Full scale is the selected range, so the trace sits where it would on the
-  // instrument: a signal filling the screen is a signal filling the range.
-  const range = latest.measurements.range_v;
+  // Full scale is four round volt/div either side of zero. The range the trace
+  // was taken on is the narrowest that covers it, so it can be a little wider.
+  const range = screenV;
   const span = shownSpan || latest.measurements.duration_s || 1;
   ctx.strokeStyle = "#3fe08f";
   ctx.lineWidth = 1.3;
@@ -818,6 +821,7 @@ async function poll() {
   }
   if (s.channel) {
     rangeV = s.channel.range_v;
+    screenV = (s.channel.volts_per_div || rangeV / (GRID_Y / 2)) * (GRID_Y / 2);
     coupling = s.channel.coupling;
     couplingButton.textContent = coupling;
     // AC is the non-default, so it is the one worth highlighting: it hides the
@@ -840,10 +844,11 @@ async function poll() {
 
   const manual = s.sweep && s.sweep.timebase_mode === "manual";
   const duration = s.latest ? s.latest.measurements.duration_s : null;
-  const chosen = manual && s.sweep.time_per_div_s ? s.sweep.time_per_div_s * GRID_X : null;
+  // Both modes draw exactly ten divisions of the server's round time/div.
+  const chosen = s.sweep && s.sweep.time_per_div_s ? s.sweep.time_per_div_s * GRID_X : null;
   shownSpan = duration && chosen ? Math.min(duration, chosen) : duration;
   tbLabel.textContent = perDivText(shownSpan ? shownSpan / GRID_X : null);
-  vLabel.textContent = s.channel ? voltsPerDivText(s.channel.range_v) : "—";
+  vLabel.textContent = s.channel ? voltsPerDivText(screenV) : "—";
   for (const b of [vDown, vUp]) b.disabled = !s.open;
   // Orange when chosen by hand: the one state where the scope will NOT adapt
   // if the signal changes, which should never come as a surprise.
@@ -870,7 +875,7 @@ async function poll() {
     readouts(m);
     const perDiv = (shownSpan || m.duration_s) / GRID_X;
     document.getElementById("divs").textContent =
-      `${voltsPerDivText(m.range_v)} · ${perDivText(perDiv)} · ` +
+      `${voltsPerDivText(screenV)} · ${perDivText(perDiv)} · ` +
       `${m.samples} samples · ${s.latest.capture_id}`;
     if (Date.now() > flashUntil) {
       // One place decides the note, most important first; setting it in several

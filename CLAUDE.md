@@ -203,6 +203,8 @@ nothing else.
 
 **The aliasing warning never trusts the capture on screen.** A timebase too slow for the signal measures an alias: a wrong, lower frequency with seemingly plenty of samples per period. Measured on the hardware: 2 206 Hz from a 10 kHz signal at 20 ms/div. `_reference_hz` is updated only while the timebase follows the signal (or from autoset), and the warning is computed against that.
 
+**Both scales are round, in auto too.** Autoset and the following used to label the screen 1.25 V/div and 524 µs/div — true and unreadable. `_clamp_window` rounds the window up to ten 1-2-5 divisions (up only: more periods is safe), and `session.volts_per_div` is a 1-2-5 screen scale on the narrowest range that covers it (`range_for_volts_per_div`). An explicit `range_v` clears it back to range/4. The page draws `screenV`, not the hardware range.
+
 **A manual time/div draws exactly what the label says.** The driver delivers up to 1.7× the requested window, and the first version labelled that honestly — 131 µs/div after clicking to 100 µs/div — which made the buttons look broken. The page draws `min(duration, time_per_div × 10)`; the capture always covers the window.
 
 **A manual capture may raise the alias reference, never lower it.** An alias reads lower than the signal, so a higher frequency with ≥ 10 samples per period is the signal itself. Without this the reference stayed at 10 kHz after the generator went to 1 MHz, and a 562 kHz alias at 0.2 ms/div raised no warning (`_raise_reference`).

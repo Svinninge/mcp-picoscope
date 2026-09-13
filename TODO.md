@@ -10,6 +10,10 @@ Newest first.
 
 ## 2026-09-13
 
+**Round volt/div and time/div.** Autoset and the auto timebase now land on 1-2-5
+steps (hardware: 1 kHz, 3 Vpp → 1 V/div on ±5 V, 500 µs/div). volt/div is a
+screen scale on the narrowest covering range.
+
 **Screenshot button — issue #6.** Saves the trace with a chosen name under
 `captures/`; `export_capture` takes the same optional `name` through the same
 cleaning. Checked on the hardware against a 1 kHz sine. Also: volt/div and
