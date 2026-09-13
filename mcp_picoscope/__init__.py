@@ -9,7 +9,7 @@ runtime, in get_server_info() and in the display header.
 
 from pathlib import Path
 
-SYSTEM_VERSION = "0.01"
+SYSTEM_VERSION = "0.02"
 __version__ = SYSTEM_VERSION
 
 _DEPLOY_FILE = Path(__file__).resolve().parents[1] / "deploy_version.txt"
