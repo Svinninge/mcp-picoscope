@@ -126,7 +126,7 @@ screen every time.
 
 **The page is a control surface, under three rules.** It reads the session, and
 may run the actions listed in `ui.CONTROLS` — today `autoset`, `trigger`,
-`sweep`. Each one needs: **one implementation** in `control.py` that the MCP tool
+`sweep`, `coupling`, `timebase`, `range`. Each one needs: **one implementation** in `control.py` that the MCP tool
 uses too, **the session lock** taken there, and **a result that lands in the
 session** so `picoscope://state` tells the truth afterwards. Never put anything
 in that whitelist that drives the outside world.
@@ -202,6 +202,12 @@ nothing else.
 **A manual timebase belongs to the user.** `SweepRunner._timebase_mode` is `auto` or `manual`; while manual, `_retune` and the widening leave the window alone and only re-check the aliasing warning. `set_time_per_div(None)` and autoset hand it back. This was the trap written into issue #1 — the following undoing a choice two seconds later — and `test_a_manual_timebase_is_not_overwritten_by_the_following` holds it shut.
 
 **The aliasing warning never trusts the capture on screen.** A timebase too slow for the signal measures an alias: a wrong, lower frequency with seemingly plenty of samples per period. Measured on the hardware: 2 206 Hz from a 10 kHz signal at 20 ms/div. `_reference_hz` is updated only while the timebase follows the signal (or from autoset), and the warning is computed against that.
+
+**A manual time/div draws exactly what the label says.** The driver delivers up to 1.7× the requested window, and the first version labelled that honestly — 131 µs/div after clicking to 100 µs/div — which made the buttons look broken. The page draws `min(duration, time_per_div × 10)`; the capture always covers the window.
+
+**A manual capture may raise the alias reference, never lower it.** An alias reads lower than the signal, so a higher frequency with ≥ 10 samples per period is the signal itself. Without this the reference stayed at 10 kHz after the generator went to 1 MHz, and a 562 kHz alias at 0.2 ms/div raised no warning (`_raise_reference`).
+
+**The capture note is decided in one place.** The alias warning was set, then wiped by the capture's empty note a few lines further down the same poll. Priority: timebase warning, sweep error, capture note.
 
 **The header wraps rather than clips.** With `flex-wrap: nowrap` and `overflow: hidden`, the time/div controls ran off the right edge of a 941 px window — the default on a 300 %-scaled display. Passive labels (clock, version, device) are dropped first by breakpoints; a second row is the last resort.
 

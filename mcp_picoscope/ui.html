@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.13 -->
+<!-- File version: v0.14 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -137,7 +137,7 @@
   }
   @media (max-width: 560px) { #activity-section { display: none; } }
   @media (max-width: 440px) { .readout.p3 { display: none; } }
-  @media (max-width: 620px) { #normal, #single, #tb-auto { display: none; } }
+  @media (max-width: 620px) { #normal, #single, #tb-auto, #v-label { display: none; } }
   @media (max-width: 400px) { .action, .sweep { display: none; } }
   @media (max-width: 340px) { .readout.p2, aside { display: none; } }
   @media (max-height: 460px) { .divs { display: none; } .readout .v { font-size: 14px; } }
@@ -162,8 +162,13 @@
     <button id="coupling" class="action" title="DC shows the true voltage; AC removes the DC level and centres the signal on 0 V">DC</button>
   </div>
   <div class="timebase">
+    <button id="v-down" class="action" title="Fewer volts per division — a taller trace">▼</button>
+    <span id="v-label" class="tb-label" title="Volts per division: the channel range over four">—</span>
+    <button id="v-up" class="action" title="More volts per division — room for a bigger signal">▲</button>
+  </div>
+  <div class="timebase">
     <button id="tb-down" class="action" title="Shorter time per division — zoom in on time">◀</button>
-    <span id="tb-label" class="tb-label" title="The time per division the scope actually delivered">—</span>
+    <span id="tb-label" class="tb-label" title="Time per division on screen">—</span>
     <button id="tb-up" class="action" title="Longer time per division — see more periods">▶</button>
     <button id="tb-auto" class="action" title="Let the timebase follow the signal again">Auto</button>
   </div>
@@ -352,10 +357,31 @@ const tbLabel = document.getElementById("tb-label");
 
 function perDivText(seconds) {
   if (!seconds) return "—";
-  if (seconds < 1e-3) return (seconds * 1e6).toPrecision(3) + " µs/div";
-  if (seconds < 1) return (seconds * 1e3).toPrecision(3) + " ms/div";
-  return seconds.toPrecision(3) + " s/div";
+  if (seconds < 1e-3) return +(seconds * 1e6).toPrecision(3) + " µs/div";
+  if (seconds < 1) return +(seconds * 1e3).toPrecision(3) + " ms/div";
+  return +seconds.toPrecision(3) + " s/div";
 }
+
+// -- volt/div: the channel range, one device range per click ---------------
+const vDown = document.getElementById("v-down");
+const vUp = document.getElementById("v-up");
+const vLabel = document.getElementById("v-label");
+vDown.onclick = () => control("action=range&step=-1", "Volt/div");
+vUp.onclick = () => control("action=range&step=1", "Volt/div");
+
+function voltsPerDivText(range) {
+  const perDiv = range / (GRID_Y / 2);
+  return perDiv < 1
+    ? +(perDiv * 1e3).toPrecision(3) + " mV/div"
+    : +perDiv.toPrecision(3) + " V/div";
+}
+
+// The time the screen spans. With a manual timebase that is exactly ten of the
+// chosen divisions: the driver only has power-of-two timebases and delivers up
+// to 1.7x more than asked, and a label reading 131 µs/div after clicking to
+// 100 µs/div made the buttons look broken. The capture covers at least the
+// window, so the extra is simply not drawn.
+let shownSpan = null;
 
 tbDown.onclick = () => control("action=timebase&step=-1", "Timebase");
 tbUp.onclick = () => control("action=timebase&step=1", "Timebase");
@@ -490,7 +516,7 @@ function draw() {
   // Full scale is the selected range, so the trace sits where it would on the
   // instrument: a signal filling the screen is a signal filling the range.
   const range = latest.measurements.range_v;
-  const span = latest.measurements.duration_s || 1;
+  const span = shownSpan || latest.measurements.duration_s || 1;
   ctx.strokeStyle = "#3fe08f";
   ctx.lineWidth = 1.3;
   ctx.beginPath();
@@ -704,8 +730,12 @@ async function poll() {
   }
 
   const manual = s.sweep && s.sweep.timebase_mode === "manual";
-  const actual = s.latest ? s.latest.measurements.duration_s / 10 : null;
-  tbLabel.textContent = perDivText(actual);
+  const duration = s.latest ? s.latest.measurements.duration_s : null;
+  const chosen = manual && s.sweep.time_per_div_s ? s.sweep.time_per_div_s * GRID_X : null;
+  shownSpan = duration && chosen ? Math.min(duration, chosen) : duration;
+  tbLabel.textContent = perDivText(shownSpan ? shownSpan / GRID_X : null);
+  vLabel.textContent = s.channel ? voltsPerDivText(s.channel.range_v) : "—";
+  for (const b of [vDown, vUp]) b.disabled = !s.open;
   // Orange when chosen by hand: the one state where the scope will NOT adapt
   // if the signal changes, which should never come as a surprise.
   tbLabel.classList.toggle("manual", manual);
@@ -729,13 +759,17 @@ async function poll() {
     latest = s.latest;
     const m = s.latest.measurements;
     readouts(m);
-    const perDiv = m.duration_s / GRID_X;
+    const perDiv = (shownSpan || m.duration_s) / GRID_X;
     document.getElementById("divs").textContent =
       `${(m.range_v / (GRID_Y / 2)).toPrecision(3)} V/div · ` +
       `${(perDiv * 1e3).toPrecision(3)} ms/div · ${m.samples} samples · ` +
       `${s.latest.capture_id}`;
     if (Date.now() > flashUntil) {
-      document.getElementById("capnote").textContent = m.note || "";
+      // One place decides the note, most important first; setting it in several
+      // places let the capture's empty note wipe the aliasing warning.
+      const sw = s.sweep || {};
+      document.getElementById("capnote").textContent =
+        sw.timebase_warning || sw.error || m.note || "";
     }
     draw();
   }

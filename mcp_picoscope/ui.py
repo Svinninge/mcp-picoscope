@@ -6,7 +6,7 @@ one page on 127.0.0.1 that polls the live session state, and opens Edge at it
 when no window is already showing one.
 
 The page reads the same ScopeSession the tools write, and may run the actions
-listed in CONTROLS — autoset, trigger, sweep, coupling, timebase. Each goes
+listed in CONTROLS — autoset, trigger, sweep, coupling, timebase, range. Each goes
 through control.py, the same code the MCP tools run, under the same lock, and
 lands in the session so both surfaces see it. Nothing that drives the outside
 world may be added: a scope is a passive listener.
@@ -524,7 +524,7 @@ def _ui_state() -> dict:
 # signal generator — and it runs the same code the MCP tool runs, under the
 # same lock. Anything added here needs the same three answers: one
 # implementation, one lock, and a result the session can report afterwards.
-CONTROLS = ("autoset", "trigger", "sweep", "coupling", "timebase")
+CONTROLS = ("autoset", "trigger", "sweep", "coupling", "timebase", "range")
 
 
 def run_control(action: str, values: dict) -> dict:
@@ -569,6 +569,11 @@ def run_control(action: str, values: dict) -> dict:
             if step == 0:
                 raise ScopeError("timebase needs step=1, step=-1 or value=auto.")
             body = control.step_time_per_div(_session, step)
+    elif action == "range":
+        step = int(_number(values, "step") or 0)
+        if step == 0:
+            raise ScopeError("range needs step=1 or step=-1.")
+        body = control.step_range(_session, step)
     elif action == "coupling":
         value = (values.get("value") or [""])[0]
         body = control.configure_channel(_session, coupling=value)

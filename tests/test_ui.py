@@ -718,3 +718,48 @@ def test_the_time_div_buttons_run_the_same_code_as_the_tool(monkeypatch):
     ui.run_control("timebase", {"step": ["-1"]})
     ui.run_control("timebase", {"value": ["auto"]})
     assert calls == [("step", 1), ("step", -1), ("set", None)]
+
+
+def test_a_faster_signal_seen_on_a_manual_timebase_raises_the_alias_reference():
+    """Measured: autoset trusted 10 kHz, the generator went to 1 MHz, and a
+    562 kHz alias at 0.2 ms/div showed no warning. An alias only reads lower, so
+    a higher well-resolved frequency is the signal itself — but a lower one must
+    never lower the reference, or the alias would vouch for itself."""
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    r = control.runner(session)
+    r._timebase_mode = "manual"
+    r._reference_hz = 10_000.0
+    r._raise_reference(1_000_000.0, 25_000_000.0)
+    assert r._reference_hz == 1_000_000.0
+    r._raise_reference(2_206.0, 12_207.0 * 10)  # lower: an alias, ignored
+    assert r._reference_hz == 1_000_000.0
+    r._raise_reference(5_000_000.0, 25_000_000.0)  # 5 samples/period: not trusted
+    assert r._reference_hz == 1_000_000.0
+    assert "alias" in r._alias_warning(1_562_500.0)
+
+
+def test_volt_div_steps_through_the_device_ranges_and_stops_at_the_ends():
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    ranges = sorted(session.device.voltage_ranges_v)
+    control.configure_channel(session, range_v=ranges[2])
+    assert control.step_range(session, +1)["range_v"] == ranges[3]
+    assert control.step_range(session, -1)["range_v"] == ranges[2]
+    control.configure_channel(session, range_v=ranges[-1])
+    assert control.step_range(session, +1)["range_v"] == ranges[-1]
+    control.configure_channel(session, range_v=ranges[0])
+    assert control.step_range(session, -1)["range_v"] == ranges[0]
+
+
+def test_the_volt_div_buttons_run_the_same_code_as_the_tool_path(monkeypatch):
+    from mcp_picoscope import control
+
+    calls: list = []
+    monkeypatch.setattr(ui, "_session", "s")
+    monkeypatch.setattr(control, "step_range", lambda s, d: calls.append(d) or {})
+    ui.run_control("range", {"step": ["1"]})
+    ui.run_control("range", {"step": ["-1"]})
+    assert calls == [1, -1]

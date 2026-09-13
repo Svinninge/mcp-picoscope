@@ -557,6 +557,22 @@ class SweepRunner:
         self.set_time_per_div(target)
         return target
 
+    def _raise_reference(self, freq: float | None, sample_rate_hz: float | None) -> None:
+        """Let a manual capture raise the trusted frequency, never lower it.
+
+        An alias always reads LOWER than the real signal, so a higher frequency,
+        resolved with enough samples per period, cannot be one: the signal itself
+        got faster. Without this the reference stayed at the 10 kHz autoset had
+        measured after the generator went to 1 MHz, and stepping to 0.2 ms/div
+        showed a 562 kHz alias with no warning (measured). Called with the guard.
+        """
+        if not freq or not sample_rate_hz:
+            return
+        if sample_rate_hz / freq < ALIAS_MIN_SAMPLES_PER_PERIOD:
+            return
+        if self._reference_hz is None or freq > self._reference_hz * SWEEP_RETUNE_RATIO:
+            self._reference_hz = freq
+
     def _alias_warning(self, sample_rate_hz: float | None) -> str:
         """Called with the guard held."""
         reference = self._reference_hz
@@ -648,6 +664,7 @@ class SweepRunner:
         freq = stats.get("frequency_hz")
         with self._guard:
             if self._timebase_mode == "manual":
+                self._raise_reference(freq, stats.get("sample_rate_hz"))
                 self._timebase_warning = self._alias_warning(stats.get("sample_rate_hz"))
                 return
         if not freq:
@@ -699,6 +716,27 @@ def _next_step(current_s: float, direction: int) -> float:
         return above[0] if above else steps[-1]
     below = [s for s in steps if s < current_s * (1 - tolerance)]
     return below[-1] if below else steps[0]
+
+
+def step_range(session: ScopeSession, direction: int) -> dict:
+    """One range up (+1, more volts per division) or down (-1) from the current.
+
+    The display has eight vertical divisions, so volts/div is the full-scale
+    range over four. The steps are the device's own ranges — 100 mV to 20 V on
+    the PS2104 — rather than an invented 1-2-5 sequence, because the driver has
+    no analogue gain in between: a label between ranges would be a lie.
+    """
+    with session.lock:
+        session.require_open()
+        ranges = sorted(session.device.voltage_ranges_v)  # type: ignore[union-attr]
+        current = session.channel.range_v
+    if direction > 0:
+        wider = [r for r in ranges if r > current * (1 + 1e-9)]
+        target = wider[0] if wider else ranges[-1]
+    else:
+        narrower = [r for r in ranges if r < current * (1 - 1e-9)]
+        target = narrower[-1] if narrower else ranges[0]
+    return configure_channel(session, range_v=target)
 
 
 def set_time_per_div(session: ScopeSession, per_div_s: float | None) -> dict:
