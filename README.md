@@ -93,6 +93,24 @@ it. One owner, two ways in.
 .\.venv\Scripts\python.exe packaging\build_exe.py     # → dist\PicoScope.exe, about 50 MB
 ```
 
+**A desktop shortcut.** Point it at `dist\PicoScope.exe` rather than copying the
+exe: a rebuild replaces the file in place, so the shortcut always starts the
+latest build. Set the working directory to the repository root, since exports
+and screenshots go to `captures\` relative to it. From the repository root:
+
+```powershell
+$exe = (Resolve-Path .\dist\PicoScope.exe).Path
+$lnk = (New-Object -ComObject WScript.Shell).CreateShortcut(
+    "$([Environment]::GetFolderPath('Desktop'))\PicoScope.lnk")
+$lnk.TargetPath = $exe
+$lnk.WorkingDirectory = (Get-Location).Path
+$lnk.IconLocation = "$exe,0"
+$lnk.Save()
+```
+
+`GetFolderPath('Desktop')` finds the real desktop, also when OneDrive has moved
+it.
+
 To let Claude use the app, copy [.mcp.json.app.example](.mcp.json.app.example) to
 `.mcp.json` — it points at `http://127.0.0.1:8090/mcp` instead of starting a
 server. Use one example or the other, not both.
