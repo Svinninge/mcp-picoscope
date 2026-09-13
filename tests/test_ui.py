@@ -614,3 +614,107 @@ def test_the_display_serves_the_last_frame_while_the_device_is_busy(monkeypatch)
     assert busy["busy"] is True
     assert busy["open"] is True, "the busy frame forgot the device was open"
     assert waited < 1.0, f"the state read waited {waited:.2f} s for the device"
+
+
+# -- time/div ---------------------------------------------------------------
+# Two traps from issue #1: the following must not overwrite a manual choice, and
+# a manual timebase too slow for the signal must say it may alias.
+
+
+def test_the_1_2_5_steps_move_one_step_and_stop_at_the_ends():
+    from mcp_picoscope import control
+
+    steps = control.TIME_PER_DIV_STEPS
+    assert control._next_step(1e-3, +1) == 2e-3
+    assert control._next_step(2e-3, -1) == 1e-3
+    assert control._next_step(steps[-1], +1) == steps[-1]
+    assert control._next_step(steps[0], -1) == steps[0]
+    # From between steps (where auto leaves it), one click always changes it.
+    assert control._next_step(1.3e-3, +1) == 2e-3
+    assert control._next_step(1.3e-3, -1) == 1e-3
+
+
+def test_a_manual_timebase_is_not_overwritten_by_the_following():
+    """The trap from issue #1: set time/div, and two seconds later it is undone."""
+    from mcp_picoscope import control
+
+    session = sweep_session()  # 1 kHz: the following would want 10 ms
+    try:
+        control.start_sweep(session, "auto")
+        control.set_time_per_div(session, 200e-6)
+        time.sleep(1.2)  # several sweeps
+        status = control.sweep_status()
+        assert status["timebase_mode"] == "manual"
+        assert status["time_per_div_s"] == pytest.approx(200e-6)
+        assert status["window_s"] == pytest.approx(2e-3), "the following moved it"
+    finally:
+        control.stop_sweep(session)
+
+
+def test_auto_hands_the_timebase_back_to_the_following():
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    try:
+        control.start_sweep(session, "auto")
+        control.set_time_per_div(session, 20e-3)
+        control.set_time_per_div(session, None)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            if control.sweep_status()["window_s"] == pytest.approx(10e-3, rel=0.05):
+                break
+            time.sleep(0.05)
+        status = control.sweep_status()
+        assert status["timebase_mode"] == "auto"
+        assert status["window_s"] == pytest.approx(10e-3, rel=0.05)
+    finally:
+        control.stop_sweep(session)
+
+
+def test_autoset_takes_a_manual_timebase_back():
+    from mcp_picoscope import control
+
+    session = sweep_session()
+    try:
+        control.start_sweep(session, "auto")
+        control.set_time_per_div(session, 20e-3)
+        control.autoset(session)
+        assert control.sweep_status()["timebase_mode"] == "auto"
+    finally:
+        control.stop_sweep(session)
+
+
+def test_a_manual_timebase_too_slow_for_the_signal_warns_that_it_may_alias():
+    """And the warning must come from the trusted frequency, not the alias."""
+    from mcp_picoscope import control
+
+    session = sweep_session()  # 1 kHz
+    try:
+        control.start_sweep(session, "auto")
+        deadline = time.monotonic() + 3  # let the following measure and trust it
+        while control.runner(session)._reference_hz is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+        # 20 ms/div → 200 ms over 4096 samples ≈ 20 kS/s ≈ 20 samples per period:
+        # still fine. Nothing slower exists in the sequence, so force it past.
+        control.set_time_per_div(session, 20e-3)
+        time.sleep(0.6)
+        assert control.sweep_status()["timebase_warning"] == ""
+        control.runner(session)._reference_hz = 5000.0  # a faster trusted signal
+        time.sleep(0.6)
+        warning = control.sweep_status()["timebase_warning"]
+        assert "alias" in warning and "5000 Hz" in warning
+    finally:
+        control.stop_sweep(session)
+
+
+def test_the_time_div_buttons_run_the_same_code_as_the_tool(monkeypatch):
+    from mcp_picoscope import control
+
+    calls: list = []
+    monkeypatch.setattr(ui, "_session", "s")
+    monkeypatch.setattr(control, "step_time_per_div", lambda s, d: calls.append(("step", d)) or {})
+    monkeypatch.setattr(control, "set_time_per_div", lambda s, v: calls.append(("set", v)) or {})
+    ui.run_control("timebase", {"step": ["1"]})
+    ui.run_control("timebase", {"step": ["-1"]})
+    ui.run_control("timebase", {"value": ["auto"]})
+    assert calls == [("step", 1), ("step", -1), ("set", None)]

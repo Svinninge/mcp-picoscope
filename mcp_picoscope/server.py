@@ -324,6 +324,19 @@ def start_sweep(mode: str = "auto", window_s: float = 0.0) -> dict:
 
 
 @tool
+def set_time_per_div(time_per_div_s: float = 0.0) -> dict:
+    """Set the timebase in seconds per division (ten divisions across). 0 = auto.
+
+    A manual timebase stays until changed: the frequency following leaves it
+    alone, and only this tool with 0, or autoset, hands it back. The reply warns
+    when the timebase is too slow to resolve the last trusted frequency — the
+    trace may alias, and an aliased waveform looks plausible. The display's
+    time/div buttons call this same code.
+    """
+    return control.set_time_per_div(session, time_per_div_s or None)
+
+
+@tool
 def stop_sweep() -> dict:
     """Stop the continuous capture started by start_sweep."""
     return control.stop_sweep(session)

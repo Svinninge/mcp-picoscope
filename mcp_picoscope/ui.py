@@ -5,10 +5,11 @@ The MCP session sees numbers; a person wants to see the waveform. This serves
 one page on 127.0.0.1 that polls the live session state, and opens Edge at it
 when no window is already showing one.
 
-Deliberately separate from the MCP surface: the page reads the same
-ScopeSession the tools write, and can never drive the hardware. A display that
-could also push buttons would need the session lock and a permission story;
-this needs neither.
+The page reads the same ScopeSession the tools write, and may run the actions
+listed in CONTROLS — autoset, trigger, sweep, coupling, timebase. Each goes
+through control.py, the same code the MCP tools run, under the same lock, and
+lands in the session so both surfaces see it. Nothing that drives the outside
+world may be added: a scope is a passive listener.
 
 ONE WINDOW PER MACHINE, and it is a machine-wide rule, not a per-process one.
 There is a single PS2104 on this desk, so a second window is always a lie about
@@ -523,7 +524,7 @@ def _ui_state() -> dict:
 # signal generator — and it runs the same code the MCP tool runs, under the
 # same lock. Anything added here needs the same three answers: one
 # implementation, one lock, and a result the session can report afterwards.
-CONTROLS = ("autoset", "trigger", "sweep", "coupling")
+CONTROLS = ("autoset", "trigger", "sweep", "coupling", "timebase")
 
 
 def run_control(action: str, values: dict) -> dict:
@@ -559,6 +560,15 @@ def run_control(action: str, values: dict) -> dict:
             delay_pct=current.delay_pct,
             auto_trigger_ms=current.auto_trigger_ms,
         )
+    elif action == "timebase":
+        value = (values.get("value") or [""])[0]
+        if value == "auto":
+            body = control.set_time_per_div(_session, None)
+        else:
+            step = int(_number(values, "step") or 0)
+            if step == 0:
+                raise ScopeError("timebase needs step=1, step=-1 or value=auto.")
+            body = control.step_time_per_div(_session, step)
     elif action == "coupling":
         value = (values.get("value") or [""])[0]
         body = control.configure_channel(_session, coupling=value)

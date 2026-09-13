@@ -7,10 +7,10 @@ Status: **v1, done and verified against hardware** (2026-09-12). Steps 0–6 are
 complete and the definition of done in §7 is met: the device identifies itself as
 variant 2104, the volt scale is measured against a 1.5 V cell, the zero against a
 shorted input, and the frequency against an 800 Hz sine to 0.03 %. What remains
-are extensions, not foundations: streaming (v2) and the rest of the interactive
-control surface in the display
+are extensions, not foundations: streaming (v2). The interactive control
+surface in the display is complete
 ([issue #1](https://github.com/Svinninge/mcp-picoscope/issues/1)). See
-[TODO.md](TODO.md).
+[TODO.md](TODO.md) and the open issues.
 
 ---
 
@@ -131,6 +131,7 @@ Claude (MCP client)
 | `measure(capture_id)` | Vpp, Vmin, Vmax, mean, RMS, frequency, period, duty cycle. |
 | `export_capture(capture_id, format)` | `csv` \| `npz` \| `png`. Returns the path. |
 | `start_sweep(mode, window_s)` / `stop_sweep()` | Continuous acquisition in its own thread: `auto`, `normal`, `single`. The lock is taken per capture, never across the loop. |
+| `set_time_per_div(time_per_div_s)` | Manual timebase in seconds per division, `0` for auto. Warns when a manual timebase may alias. |
 | `autoset()` | Tries voltage ranges and timebases until the signal fills the screen sensibly — what the "AutoSetup" button does. The ladder runs **fast → slow** and a frequency is believed only at ≥10 samples per period; the opposite direction produced an alias (11.8 kHz reported as 406 Hz). It also hands its window to a running sweep and sets the trigger level to half of peak-to-peak. Also a button in the display. |
 
 **Resource:** `picoscope://state` — current configuration and the latest capture
@@ -204,6 +205,9 @@ the original plan)*
   launch.
 - Trigger and sweep controls: Run / Normal / Single / Stop, and a trigger level
   dragged with the mouse (issue #1).
+- AC/DC coupling and a 0 V marker.
+- time/div: a 1-2-5 sequence with an explicit auto/manual owner and a warning
+  when a manual timebase may alias (issue #1, now complete).
 
 **Step 7 — The desktop app** ✅ 2026-09-13 *(requested after v1)*
 - `PicoScope.exe`: one process owns the scope, shows the display for manual

@@ -199,6 +199,12 @@ traceback every time an HTTP client hangs up — twelve for one test session —
 so `app.py` filters exactly that exception type on the `asyncio` logger and
 nothing else.
 
+**A manual timebase belongs to the user.** `SweepRunner._timebase_mode` is `auto` or `manual`; while manual, `_retune` and the widening leave the window alone and only re-check the aliasing warning. `set_time_per_div(None)` and autoset hand it back. This was the trap written into issue #1 — the following undoing a choice two seconds later — and `test_a_manual_timebase_is_not_overwritten_by_the_following` holds it shut.
+
+**The aliasing warning never trusts the capture on screen.** A timebase too slow for the signal measures an alias: a wrong, lower frequency with seemingly plenty of samples per period. Measured on the hardware: 2 206 Hz from a 10 kHz signal at 20 ms/div. `_reference_hz` is updated only while the timebase follows the signal (or from autoset), and the warning is computed against that.
+
+**The header wraps rather than clips.** With `flex-wrap: nowrap` and `overflow: hidden`, the time/div controls ran off the right edge of a 941 px window — the default on a 300 %-scaled display. Passive labels (clock, version, device) are dropped first by breakpoints; a second row is the last resort.
+
 **AC coupling has to settle.** It is a capacitor, and after switching to AC the midpoint drifts: measured +0.24 V at 1.08 s, +0.02 V at 1.25 s, settled by 1.42 s. The first version took one capture straight after the switch and put the trigger at 1.258 V on a signal centred at 0 V. `_settled_capture` repeats captures until the midpoint moves by no more than two ADC steps. The mock models the settling with the measured time constant (`AC_SETTLE_TAU_S`); it used to remove the DC instantly, which is how the bug passed every test.
 
 **The captures that find a new trigger level must not wait for the old one.** After AC → DC in NORMAL mode, an edge trigger left at −0.02 V never fires on a 0..3 V signal, so the settling capture waited out its timeout and the switch failed. Those captures run free-running, and the user's mode is given back around the new level.

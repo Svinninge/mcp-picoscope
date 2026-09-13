@@ -10,6 +10,17 @@ Newest first.
 
 ## 2026-09-13
 
+**time/div in the display — issue #1 complete.** `◀ ▶` step a 1-2-5 sequence,
+`Auto` hands the timebase back, and the label shows the timebase the driver
+actually delivered. Both traps written into the issue held on the hardware: a
+manual 0.2 ms/div was still there after three seconds of sweeping, and stepping
+up to 20 ms/div on a 10 kHz square wave measured a steady **2 206 Hz alias** —
+and warned anyway, because the warning is computed from the last frequency
+measured on a timebase chosen to resolve it, not from the capture on screen.
+Found while checking the layout: at 941 px, the default window width on a
+300 %-scaled display, the new controls ran off the edge of the header. It now
+drops passive labels first and wraps as a last resort.
+
 **AC/DC coupling and a 0 V marker in the display.** Asked as "shouldn't the
 trace be centred on 0 V?" — no: in DC coupling the trace shows the true voltage,
 exactly as a bench scope does. What was missing was a marker saying where zero

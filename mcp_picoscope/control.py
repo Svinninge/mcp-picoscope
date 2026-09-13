@@ -94,6 +94,21 @@ SWEEP_WIDEN_FACTOR = 8.0
 # simply tries again, and between turns everything else gets the lock.
 SWEEP_TRIGGER_WAIT_S = 1.0
 
+# Timebase steps in seconds per division, the 1-2-5 sequence of a bench scope.
+# Ten divisions across, so the window is ten times the step. The ends follow
+# the sweep's window limits; the display always shows the timebase the driver
+# actually delivered, which snaps to its own grid and can be up to 2x wider.
+DIVISIONS = 10
+TIME_PER_DIV_STEPS = (
+    10e-6, 20e-6, 50e-6,
+    100e-6, 200e-6, 500e-6,
+    1e-3, 2e-3, 5e-3,
+    10e-3, 20e-3,
+)
+# Fewer samples per period than this and the trace may alias — the same bound
+# autoset uses before it believes a frequency.
+ALIAS_MIN_SAMPLES_PER_PERIOD = 10
+
 # What an edge trigger's rescue is set to when leaving NORMAL for AUTO.
 NORMAL_RESCUE_MS = 1000
 
@@ -412,6 +427,16 @@ class SweepRunner:
         # signal changed" from "somebody deliberately picked a different number
         # of periods", so autoset's choice was overwritten 150 ms later.
         self._tuned_for_hz: float | None = None
+        # Who owns the timebase: "auto" follows the signal, "manual" is a
+        # time/div somebody chose and nothing else may overwrite.
+        self._timebase_mode = "auto"
+        self._manual_per_div_s: float | None = None
+        # The last frequency measured while the timebase was chosen to resolve
+        # it. A manual timebase that is too slow measures an ALIAS — a wrong,
+        # low frequency with apparently plenty of samples per period — so the
+        # aliasing warning must never be computed from a manual capture.
+        self._reference_hz: float | None = None
+        self._timebase_warning = ""
         self._guard = threading.Lock()  # guards the fields above, not the device
 
     # -- control -----------------------------------------------------------
@@ -497,6 +522,57 @@ class SweepRunner:
             self._window_s = _clamp_window(seconds)
             self._tuned_for_hz = for_hz
             self._misses = 0
+            # Autoset means "choose for me": it takes the timebase back.
+            self._timebase_mode = "auto"
+            self._manual_per_div_s = None
+            self._timebase_warning = ""
+            if for_hz:
+                self._reference_hz = for_hz
+
+    def set_time_per_div(self, per_div_s: float | None) -> None:
+        """Choose the timebase by hand, or hand it back with None."""
+        with self._guard:
+            if per_div_s is None:
+                self._timebase_mode = "auto"
+                self._manual_per_div_s = None
+                self._timebase_warning = ""
+                self._tuned_for_hz = None  # retune on the next capture
+                return
+            window = _clamp_window(per_div_s * DIVISIONS)
+            self._timebase_mode = "manual"
+            self._manual_per_div_s = window / DIVISIONS
+            self._window_s = window
+            self._misses = 0
+            self._timebase_warning = self._alias_warning(None)
+
+    def step_time_per_div(self, direction: int) -> float:
+        """Move one step along the 1-2-5 sequence from what is on screen now."""
+        with self._guard:
+            current = (
+                self._manual_per_div_s
+                if self._manual_per_div_s is not None
+                else self._window_s / DIVISIONS
+            )
+        target = _next_step(current, direction)
+        self.set_time_per_div(target)
+        return target
+
+    def _alias_warning(self, sample_rate_hz: float | None) -> str:
+        """Called with the guard held."""
+        reference = self._reference_hz
+        if self._timebase_mode != "manual" or not reference:
+            return ""
+        rate = sample_rate_hz or (SWEEP_SAMPLES / self._window_s)
+        per_period = rate / reference
+        if per_period >= ALIAS_MIN_SAMPLES_PER_PERIOD:
+            return ""
+        return (
+            f"At this timebase the scope samples at {rate:.4g} S/s — about "
+            f"{per_period:.1f} samples per period of the {reference:.6g} Hz signal "
+            "last measured, fewer than it takes to trust the trace. It may alias: "
+            "what you see can be a false, slower waveform. Shorten time/div or "
+            "press Auto."
+        )
 
     def status(self) -> dict:
         thread = self._thread
@@ -507,6 +583,14 @@ class SweepRunner:
                 "window_s": round_sig(self._window_s, 5),
                 "sweeps": self._sweeps,
                 "error": self._error,
+                "timebase_mode": self._timebase_mode,
+                "time_per_div_s": round_sig(
+                    self._manual_per_div_s
+                    if self._manual_per_div_s is not None
+                    else self._window_s / DIVISIONS,
+                    5,
+                ),
+                "timebase_warning": self._timebase_warning,
             }
 
     # -- the loop ----------------------------------------------------------
@@ -555,8 +639,17 @@ class SweepRunner:
             return measure(capture)
 
     def _retune(self, stats: dict) -> None:
-        """Follow the signal, and climb back out when the window is too short."""
+        """Follow the signal, and climb back out when the window is too short.
+
+        With a manual timebase nothing here may move the window — that was the
+        trap written into issue #1: the user sets time/div and the following
+        undoes it two seconds later. It only re-checks the aliasing warning.
+        """
         freq = stats.get("frequency_hz")
+        with self._guard:
+            if self._timebase_mode == "manual":
+                self._timebase_warning = self._alias_warning(stats.get("sample_rate_hz"))
+                return
         if not freq:
             self._widen_after_misses()
             return
@@ -565,6 +658,7 @@ class SweepRunner:
             reference = self._tuned_for_hz
             if reference and max(freq / reference, reference / freq) <= SWEEP_RETUNE_RATIO:
                 return  # same signal; leave the window as somebody chose it
+            self._reference_hz = freq  # measured on a timebase chosen for it
             wanted = _clamp_window(SWEEP_PERIODS_ON_SCREEN / freq)
             if reference is None or wanted != self._window_s:
                 self._window_s = wanted
@@ -589,6 +683,35 @@ class SweepRunner:
                 return  # already at the widest; nothing periodic is there
             self._window_s = widened
             log.info("sweep saw nothing periodic → widening to %.4g ms", widened * 1e3)
+
+
+def _next_step(current_s: float, direction: int) -> float:
+    """The neighbouring 1-2-5 step, clamped to the ends of the sequence.
+
+    From a value between steps (the auto timebase rarely sits on one), a step
+    up goes to the next step above it and a step down to the next below, so a
+    single click always visibly changes the screen.
+    """
+    steps = TIME_PER_DIV_STEPS
+    tolerance = 1e-9
+    if direction > 0:
+        above = [s for s in steps if s > current_s * (1 + tolerance)]
+        return above[0] if above else steps[-1]
+    below = [s for s in steps if s < current_s * (1 - tolerance)]
+    return below[-1] if below else steps[0]
+
+
+def set_time_per_div(session: ScopeSession, per_div_s: float | None) -> dict:
+    """The timebase in seconds per division, or None to follow the signal."""
+    if per_div_s is not None and per_div_s <= 0:
+        raise ScopeError("time_per_div_s must be positive, or 0 for auto.")
+    runner(session).set_time_per_div(per_div_s)
+    return runner(session).status()
+
+
+def step_time_per_div(session: ScopeSession, direction: int) -> dict:
+    runner(session).step_time_per_div(1 if direction > 0 else -1)
+    return runner(session).status()
 
 
 def _clamp_window(seconds: float) -> float:
@@ -619,5 +742,9 @@ def stop_sweep(session: ScopeSession) -> dict:
 def sweep_status(session: ScopeSession | None = None) -> dict:
     """Status without creating a runner — safe to call from the state handler."""
     if _runner is None:
-        return {"running": False, "mode": "stop", "window_s": None, "sweeps": 0, "error": ""}
+        return {
+            "running": False, "mode": "stop", "window_s": None, "sweeps": 0,
+            "error": "", "timebase_mode": "auto", "time_per_div_s": None,
+            "timebase_warning": "",
+        }
     return _runner.status()

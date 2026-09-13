@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- File version: v0.12 -->
+<!-- File version: v0.13 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -29,10 +29,15 @@
        because the canvas wrapper extends past the visible area. */
     height: 100vh; gap: 1px;
   }
+  /* The header wraps rather than clips. With nowrap and overflow hidden, the
+     time/div controls ran off the right edge of a 941 px window — the default
+     size on a 300 %-scaled display — and a control you cannot reach is not a
+     control. The breakpoints below drop the passive labels first, so a second
+     row is the last resort, not the first. */
   header {
     grid-column: 1 / -1; background: var(--panel);
-    display: flex; align-items: center; gap: 10px;
-    padding: 6px var(--pad); flex-wrap: nowrap; overflow: hidden;
+    display: flex; align-items: center; gap: 10px; row-gap: 4px;
+    padding: 6px var(--pad); flex-wrap: wrap;
   }
   h1 { font-size: 14px; margin: 0; font-weight: 600; white-space: nowrap; }
   .pill {
@@ -61,6 +66,13 @@
   .action.on { border-color: var(--ok); color: var(--ok); }
   .sweep { display: flex; gap: 4px; flex: 0 0 auto; }
   .sweep .action { padding: 2px 8px; }
+  .timebase { display: flex; gap: 3px; align-items: center; flex: 0 0 auto; }
+  .timebase .action { padding: 2px 7px; }
+  .tb-label {
+    min-width: 76px; text-align: center; font-size: 12px;
+    font-variant-numeric: tabular-nums; color: var(--ink);
+  }
+  .tb-label.manual { color: var(--warn); }
   #screen.dragging { cursor: ns-resize; }
 
   main {
@@ -113,6 +125,11 @@
      panel, then the secondary readouts. The trace and the range it was taken
      on are the last things to go, because a curve without its scale is not a
      measurement. */
+  /* Passive labels go first, lowest value first: the clock, then the version,
+     then the device name. Status and every control stay. */
+  @media (max-width: 1240px) { #clock { display: none; } }
+  @media (max-width: 1120px) { #version { display: none; } }
+  @media (max-width: 1000px) { #device { display: none; } }
   @media (max-width: 760px) {
     body { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
     aside { flex-direction: row; flex-wrap: wrap; gap: 16px; max-height: 34vh; }
@@ -120,7 +137,7 @@
   }
   @media (max-width: 560px) { #activity-section { display: none; } }
   @media (max-width: 440px) { .readout.p3 { display: none; } }
-  @media (max-width: 620px) { #normal, #single { display: none; } }
+  @media (max-width: 620px) { #normal, #single, #tb-auto { display: none; } }
   @media (max-width: 400px) { .action, .sweep { display: none; } }
   @media (max-width: 340px) { .readout.p2, aside { display: none; } }
   @media (max-height: 460px) { .divs { display: none; } .readout .v { font-size: 14px; } }
@@ -143,6 +160,12 @@
     <button id="stop" class="action" title="Stop the sweep">Stop</button>
     <button id="slope" class="action" title="Trigger edge">↑</button>
     <button id="coupling" class="action" title="DC shows the true voltage; AC removes the DC level and centres the signal on 0 V">DC</button>
+  </div>
+  <div class="timebase">
+    <button id="tb-down" class="action" title="Shorter time per division — zoom in on time">◀</button>
+    <span id="tb-label" class="tb-label" title="The time per division the scope actually delivered">—</span>
+    <button id="tb-up" class="action" title="Longer time per division — see more periods">▶</button>
+    <button id="tb-auto" class="action" title="Let the timebase follow the signal again">Auto</button>
   </div>
   <div class="zoom">
     <button id="zoom-out" title="Smaller (Ctrl+-)">−</button>
@@ -316,6 +339,27 @@ const sweepModes = { run: "auto", normal: "normal", single: "single", stop: "sto
 for (const [id, mode] of Object.entries(sweepModes)) {
   sweepButtons[id].onclick = () => control("action=sweep&mode=" + mode, "Sweep");
 }
+
+// -- time/div ------------------------------------------------------------
+// The buttons step a 1-2-5 sequence on the server, which owns the timebase.
+// The label shows what the scope ACTUALLY delivered, not what was asked for:
+// the driver snaps to its own grid, and a label claiming a timebase the trace
+// was not taken at would be the same kind of lie as an alias.
+const tbDown = document.getElementById("tb-down");
+const tbUp = document.getElementById("tb-up");
+const tbAuto = document.getElementById("tb-auto");
+const tbLabel = document.getElementById("tb-label");
+
+function perDivText(seconds) {
+  if (!seconds) return "—";
+  if (seconds < 1e-3) return (seconds * 1e6).toPrecision(3) + " µs/div";
+  if (seconds < 1) return (seconds * 1e3).toPrecision(3) + " ms/div";
+  return seconds.toPrecision(3) + " s/div";
+}
+
+tbDown.onclick = () => control("action=timebase&step=-1", "Timebase");
+tbUp.onclick = () => control("action=timebase&step=1", "Timebase");
+tbAuto.onclick = () => control("action=timebase&value=auto", "Timebase");
 
 const couplingButton = document.getElementById("coupling");
 
@@ -657,6 +701,20 @@ async function poll() {
   // sweep mode is shown rather than hiding it in a log.
   if (s.sweep && s.sweep.error && Date.now() > flashUntil) {
     document.getElementById("capnote").textContent = s.sweep.error;
+  }
+
+  const manual = s.sweep && s.sweep.timebase_mode === "manual";
+  const actual = s.latest ? s.latest.measurements.duration_s / 10 : null;
+  tbLabel.textContent = perDivText(actual);
+  // Orange when chosen by hand: the one state where the scope will NOT adapt
+  // if the signal changes, which should never come as a surprise.
+  tbLabel.classList.toggle("manual", manual);
+  tbAuto.classList.toggle("on", !manual);
+  for (const b of [tbDown, tbUp, tbAuto]) b.disabled = !s.open;
+  // An aliasing warning outranks everything but a button's own message: the
+  // trace on screen may be a false waveform, and that is worth the space.
+  if (s.sweep && s.sweep.timebase_warning && Date.now() > flashUntil) {
+    document.getElementById("capnote").textContent = s.sweep.timebase_warning;
   }
 
   const act = document.getElementById("activity");

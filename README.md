@@ -124,6 +124,7 @@ server. Use one example or the other, not both.
 | `autoset()` | Picks a range and timebase that show the signal, and puts the trigger level at half of peak-to-peak. Hunts across timebases fast → slow, so anything from 50 Hz to 1 MHz is found. |
 | `start_sweep(mode, window_s)` | Capture continuously. `auto` sweeps regardless of the trigger, `normal` only on a real trigger, `single` once. |
 | `stop_sweep()` | Stop the sweep. |
+| `set_time_per_div(time_per_div_s)` | The timebase in seconds per division, or `0` for auto. A manual timebase stays until changed, and the reply warns when it is too slow to resolve the signal. |
 | `open_ui(force)` | Show the display; reuses the window already watching. `force=true` opens another. |
 
 **Resource:** `picoscope://state` — backend, device, channel, trigger, sweep and
@@ -148,6 +149,10 @@ trigger, and `Single` captures once and stops. **The trigger level is dragged
 with the mouse** on the trace. The line is always drawn, dimmed when the trigger
 is not armed, and dragging it is what arms it. The arrow button toggles rising
 and falling edge.
+
+**time/div.** `◀` and `▶` step a 1-2-5 sequence from 10 µs to 20 ms per division; `Auto` hands the timebase back. The label shows the time per division the scope **actually delivered** — the driver snaps to a grid of powers of two, so it can be up to twice what was asked for — and turns orange while the timebase is manual, because that is the one state in which the scope will not adapt if the signal changes. Autoset also takes the timebase back.
+
+A timebase that is too slow for the signal does not fail; it **aliases**, and an alias looks entirely plausible. Stepped up to 20 ms/div on a 10 kHz square wave, the scope measured a steady 2 206 Hz. So a manual timebase that leaves fewer than ten samples per period warns under the trace, and the warning is computed from the last frequency measured on a timebase chosen to resolve it — never from the capture on screen, which may be the alias itself.
 
 **AC / DC and the 0 V marker.** The green pointer at the left edge is 0 V, as on a bench scope; the trigger marker sits at the right edge. In **DC** the trace shows the true voltage, so a 0..3 V signal floats above the marker — that is correct, not an offset error. **AC** removes the DC level and centres the signal on 0 V. On a PS2104 that is also the only way to gain resolution on an offset signal: the ps2000 driver has no analogue offset, so the range cannot follow the signal up. A 0..3 V sine on ±5 V uses about 30 % of the ADC; AC coupled on ±2 V it uses 75 %. The price is the DC level itself, and square waves grow sloping tops through the coupling capacitor — which is why autoset never switches to AC on its own. Switching coupling moves the trigger level to the signal's new midpoint, once the capacitor has settled.
 
