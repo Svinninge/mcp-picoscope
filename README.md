@@ -123,6 +123,15 @@ server. Use one example or the other, not both.
   seconds after the window does. That is deliberate: a window merely throttled
   in the background must not switch the instrument off under you.
 - `PICOSCOPE_MCP_PORT` moves the endpoint off 8090.
+- **Reaching the app from another computer** (verified 2026-09-20): leave the
+  endpoint on `127.0.0.1` and publish it on the tailnet with
+  `tailscale serve --bg --https=8443 http://127.0.0.1:8090`. The proxy passes the
+  original `Host` through and the SDK's DNS-rebinding protection allows only
+  localhost, so name the machine's tailnet host as well:
+  `PICOSCOPE_MCP_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net`. Clients then use
+  `https://<machine>.<tailnet>.ts.net:8443/mcp`. The endpoint has no
+  authentication of its own — Tailscale ACLs are what keep it private — and the
+  app still ends when its window closes, which takes the endpoint with it.
 
 ## Tools
 

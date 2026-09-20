@@ -263,6 +263,7 @@ the original plan)*
 | `PICOSCOPE_UI_BROWSER` | `1` | `0` serves the page but never opens a window. |
 | `PICOSDK_DIR` | *(auto)* | The directory holding `ps2000.dll` when the search misses. |
 | `PICOSCOPE_MCP_PORT` | `8090` | Where the desktop app serves MCP over HTTP. |
+| `PICOSCOPE_MCP_ALLOWED_HOSTS` | *(none)* | Extra `Host` values the endpoint accepts, comma-separated — the tailnet name when `tailscale serve` proxies to it. Localhost stays allowed; without this a proxied request gets 421. |
 
 ---
 

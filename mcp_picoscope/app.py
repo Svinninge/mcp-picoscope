@@ -35,6 +35,11 @@ MCP_PORT_ENV = "PICOSCOPE_MCP_PORT"
 # Outside the display's port scan (8071-8080), so the two never collide.
 DEFAULT_MCP_PORT = 8090
 MCP_PATH = "/mcp"
+# Extra Host headers the MCP endpoint accepts, comma-separated (e.g. the
+# machine's Tailscale name when `tailscale serve` proxies to 127.0.0.1). The
+# SDK's DNS-rebinding protection allows localhost only, and a proxy passes the
+# original Host through, so without this a tailnet client gets 421.
+MCP_ALLOWED_HOSTS_ENV = "PICOSCOPE_MCP_ALLOWED_HOSTS"
 
 # Edge needs time to start a cold profile and load the page; until the first
 # poll arrives, silence means "not open yet", not "closed".
@@ -129,6 +134,30 @@ def wait_for_window_close(
         sleep(interval_s)
 
 
+def transport_security():
+    """DNS-rebinding settings for the MCP endpoint, localhost plus extra names.
+
+    Returning None would keep the SDK's own localhost-only default; the extra
+    names are what a reverse proxy such as `tailscale serve` puts in Host.
+    """
+    extra = [h.strip() for h in os.environ.get(MCP_ALLOWED_HOSTS_ENV, "").split(",") if h.strip()]
+    if not extra:
+        return None
+
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    local_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+    local_origins = ["http://127.0.0.1:*", "http://localhost:*", "http://[::1]:*"]
+    hosts = local_hosts + [h for e in extra for h in (e, f"{e}:*")]
+    origins = local_origins + [o for e in extra for o in (f"https://{e}", f"https://{e}:*")]
+    log.info("MCP endpoint also accepts Host: %s", ", ".join(extra))
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=hosts,
+        allowed_origins=origins,
+    )
+
+
 class McpHttpServer:
     """The MCP tools over streamable HTTP, with a handle to stop them.
 
@@ -141,7 +170,11 @@ class McpHttpServer:
     def __init__(self, server, host: str, port: int, path: str) -> None:
         import uvicorn
 
-        app = server.streamable_http_app(streamable_http_path=path, host=host)
+        app = server.streamable_http_app(
+            streamable_http_path=path,
+            host=host,
+            transport_security=transport_security(),
+        )
         config = uvicorn.Config(
             app,
             host=host,
