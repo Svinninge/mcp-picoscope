@@ -28,7 +28,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-log = logging.getLogger("mcp_picoscope.app")
+log = logging.getLogger("picoscope_mcp.app")
 
 MCP_HOST = "127.0.0.1"
 MCP_PORT_ENV = "PICOSCOPE_MCP_PORT"

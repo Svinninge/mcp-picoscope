@@ -24,9 +24,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mcp_picoscope import control  # noqa: E402
-from mcp_picoscope.backends.ps2000 import PS2000Backend  # noqa: E402
-from mcp_picoscope.scope import (  # noqa: E402
+from picoscope_mcp import control  # noqa: E402
+from picoscope_mcp.backends.ps2000 import PS2000Backend  # noqa: E402
+from picoscope_mcp.scope import (  # noqa: E402
     ScopeError,
     ScopeSession,
     TriggerConfig,

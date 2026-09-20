@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-PAGE = Path(__file__).resolve().parents[1] / "mcp_picoscope" / "ui.html"
+PAGE = Path(__file__).resolve().parents[1] / "picoscope_mcp" / "ui.html"
 NODE = shutil.which("node") or r"C:\Program Files\nodejs\node.exe"
 
 

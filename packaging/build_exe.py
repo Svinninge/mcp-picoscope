@@ -32,7 +32,7 @@ ARGS = [
     "--specpath", str(ROOT / "build"),
     # ui.py reads the page from next to itself, so it must land in the package
     # directory inside the bundle, not at the root.
-    "--add-data", f"{ROOT / 'mcp_picoscope' / 'ui.html'}{SEP}mcp_picoscope",
+    "--add-data", f"{ROOT / 'picoscope_mcp' / 'ui.html'}{SEP}picoscope_mcp",
     # version_line() reads this from the package's parent directory.
     "--add-data", f"{ROOT / 'deploy_version.txt'}{SEP}.",
     # uvicorn picks its loop, protocol and lifespan implementations by name at

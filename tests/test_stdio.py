@@ -36,7 +36,7 @@ def payload(result) -> dict:
 async def run() -> None:
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "mcp_picoscope.server"],
+        args=["-m", "picoscope_mcp.server"],
         cwd=str(ROOT),
         # No Edge window from a test run: the display opens on the first tool
         # call, and a suite makes dozens of them.

@@ -34,7 +34,7 @@ async def run() -> None:
     env = {k: v for k, v in os.environ.items() if k != "PICOSCOPE_UI"}
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "mcp_picoscope.server"],
+        args=["-m", "picoscope_mcp.server"],
         cwd=str(ROOT),
         env=env,
     )

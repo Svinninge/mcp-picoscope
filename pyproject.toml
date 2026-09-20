@@ -1,5 +1,5 @@
 [project]
-name = "mcp-picoscope"
+name = "picoscope-mcp"
 version = "0.1.0"
 description = "MCP server exposing a PicoScope PS2104 USB oscilloscope as tools"
 requires-python = ">=3.11"
@@ -16,18 +16,18 @@ hardware = ["picosdk"]
 build = ["pyinstaller"]
 
 [project.scripts]
-mcp-picoscope = "mcp_picoscope.server:main"
+picoscope-mcp = "picoscope_mcp.server:main"
 
 # The desktop app: owns the scope, shows the display, serves MCP over HTTP.
 [project.gui-scripts]
-picoscope-app = "mcp_picoscope.app:main"
+picoscope-app = "picoscope_mcp.app:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["mcp_picoscope*"]
+include = ["picoscope_mcp*"]
 
 [tool.setuptools.package-data]
-mcp_picoscope = ["ui.html"]
+picoscope_mcp = ["ui.html"]

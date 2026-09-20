@@ -11,10 +11,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mcp_picoscope import analysis
-from mcp_picoscope.analysis import downsample_minmax, measure
-from mcp_picoscope.backends.mock import MockBackend, MockSignal
-from mcp_picoscope.scope import (
+from picoscope_mcp import analysis
+from picoscope_mcp.analysis import downsample_minmax, measure
+from picoscope_mcp.backends.mock import MockBackend, MockSignal
+from picoscope_mcp.scope import (
     Capture,
     ChannelConfig,
     ScopeError,
@@ -100,7 +100,7 @@ def test_ac_coupling_removes_the_offset_once_settled():
     """
     import time
 
-    from mcp_picoscope.backends.mock import AC_SETTLE_TAU_S
+    from picoscope_mcp.backends.mock import AC_SETTLE_TAU_S
 
     backend = MockBackend(MockSignal("sine", 1000.0, 1.0, offset_v=2.0, noise_v=0.0))
     backend.open()

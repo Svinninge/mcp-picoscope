@@ -15,10 +15,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mcp_picoscope.analysis import measure  # noqa: E402
-from mcp_picoscope.backends.ps2000 import PS2000Backend  # noqa: E402
-from mcp_picoscope.export import export  # noqa: E402
-from mcp_picoscope.scope import ChannelConfig, ScopeError, TriggerConfig  # noqa: E402
+from picoscope_mcp.analysis import measure  # noqa: E402
+from picoscope_mcp.backends.ps2000 import PS2000Backend  # noqa: E402
+from picoscope_mcp.export import export  # noqa: E402
+from picoscope_mcp.scope import ChannelConfig, ScopeError, TriggerConfig  # noqa: E402
 
 WINDOWS_S = (0.002, 0.005, 0.02, 0.05, 0.2)
 HEADROOM = 1.2

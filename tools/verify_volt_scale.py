@@ -21,9 +21,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from mcp_picoscope.analysis import measure  # noqa: E402
-from mcp_picoscope.backends.ps2000 import MAX_ADC, PS2000Backend  # noqa: E402
-from mcp_picoscope.scope import ChannelConfig, TriggerConfig  # noqa: E402
+from picoscope_mcp.analysis import measure  # noqa: E402
+from picoscope_mcp.backends.ps2000 import MAX_ADC, PS2000Backend  # noqa: E402
+from picoscope_mcp.scope import ChannelConfig, TriggerConfig  # noqa: E402
 
 # A fresh alkaline AA sits near 1.6 V unloaded and a used one near 1.3 V, so
 # anything in this window is "the cell"; a wrong MAX_ADC would be off by a

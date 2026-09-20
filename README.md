@@ -54,7 +54,7 @@ Copy [.mcp.json.example](.mcp.json.example) to `.mcp.json` and adjust the paths
 to your checkout, or register the server at user scope:
 
 ```powershell
-claude mcp add --scope user picoscope -- <checkout>\.venv\Scripts\python.exe -m mcp_picoscope.server
+claude mcp add --scope user picoscope -- <checkout>\.venv\Scripts\python.exe -m picoscope_mcp.server
 ```
 
 ### Hardware (step 0)
@@ -159,11 +159,26 @@ server. Use one example or the other, not both.
 | `set_time_per_div(time_per_div_s)` | The timebase in seconds per division, or `0` for auto. A manual timebase stays until changed, and the reply warns when it is too slow to resolve the signal. |
 | `open_ui(force)` | Show the display; reuses the window already watching. `force=true` opens another. |
 
+**Annotations:** every tool carries MCP `ToolAnnotations`, so a client can tell
+what is safe to call unasked. `list_devices`, `get_device_info`,
+`get_server_info` and `measure` are `readOnly`; everything that arms the scope,
+moves a range, starts a sweep, writes a file or opens a window is not.
+`close_device` is the only one flagged `destructive` — it drops the held
+captures. They are set in one place, the `tool()` decorator in `server.py`.
+
 **Resource:** `picoscope://state` — backend, device, channel, trigger, sweep and
 held captures.
 
 Exports land in `./captures/`, configurable with the `CAPTURE_DIR` environment
 variable.
+
+## Evaluation
+
+`evaluations/picoscope_eval.xml` holds ten questions in the format the MCP skill
+prescribes (`<qa_pair>` with `<question>`/`<answer>`). They are answered against
+the **mock** backend, so no hardware is needed and the answers are
+deterministic. The mock is 8-bit like the real scope, so measured values are
+quantised and the questions ask for rounded ones.
 
 ## The display
 

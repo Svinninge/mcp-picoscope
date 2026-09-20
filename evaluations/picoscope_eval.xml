@@ -1,0 +1,51 @@
+<!-- File version: v0.01 -->
+<!-- Description: Evaluation questions for the picoscope MCP server, answered against the mock backend -->
+<!-- Author: Per Norrfors -->
+<!-- Created: 2026-09-20 -->
+<!-- Modified: 2026-09-20 - Initial evaluation suite (Claude) -->
+<!-- No hardware needed: every question is answered with open_device(backend="mock"), which is -->
+<!-- deterministic. Nothing is destroyed; captures live in the server process and disappear with it. -->
+<!-- The mock is 8-bit like the real scope, so measured values are quantised — the questions ask for -->
+<!-- rounded values so a string comparison is fair. -->
+<evaluation>
+  <qa_pair>
+    <question>Vilken modellbeteckning rapporterar den simulerade (mock) backenden?</question>
+    <answer>PS2104-MOCK</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Vilket serienummer rapporterar den simulerade backenden?</question>
+    <answer>MOCK0001</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Hur många kanaler har den simulerade backenden?</question>
+    <answer>1</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Hur många bitars upplösning har den simulerade backendens A/D-omvandlare?</question>
+    <answer>8</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Hur många sampel är det mesta den simulerade backenden kan ta i en blockmätning?</question>
+    <answer>32768</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Hur många valbara spänningsområden erbjuder den simulerade backenden?</question>
+    <answer>9</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Vilket är det största spänningsområdet (i volt, full skala) som den simulerade backenden erbjuder?</question>
+    <answer>20</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Öppna den simulerade backenden, ställ in en sinus på 1000 Hz med amplituden 1 V och brus 0, ta en blockmätning över 5 ms och mät signalen. Vilken frekvens mäter servern, avrundat till närmaste hela hertz?</question>
+    <answer>1000</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Öppna den simulerade backenden, ställ in en sinus på 1000 Hz med amplituden 1 V och brus 0, ta en blockmätning över 5 ms och mät signalen. Vilket toppvärde till toppvärde (Vpp) mäter servern, avrundat till en decimal i volt?</question>
+    <answer>2.0</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Öppna den simulerade backenden, ställ in en fyrkantvåg på 2000 Hz med amplituden 2 V, offset 0,5 V, brus 0 och pulskvot 25 %, ta en blockmätning över 5 ms och mät signalen. Vilken pulskvot mäter servern, avrundat till närmaste hela procent?</question>
+    <answer>25</answer>
+  </qa_pair>
+</evaluation>

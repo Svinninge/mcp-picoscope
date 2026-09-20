@@ -65,23 +65,23 @@ asked about.
 Claude (MCP client)
         │  stdio, MCP protocol
         ▼
-  mcp_picoscope/server.py        ← MCPServer, tool definitions
+  picoscope_mcp/server.py        ← MCPServer, tool definitions
         │
         ▼
-  mcp_picoscope/scope.py         ← abstract scope interface
+  picoscope_mcp/scope.py         ← abstract scope interface
         ├── backends/ps2000.py   ← real hardware through picosdk
         └── backends/mock.py     ← simulated signal source
         │
         ▼
-  mcp_picoscope/analysis.py      ← Vpp, RMS, frequency, duty cycle
-  mcp_picoscope/export.py        ← CSV / NPZ / PNG
+  picoscope_mcp/analysis.py      ← Vpp, RMS, frequency, duty cycle
+  picoscope_mcp/export.py        ← CSV / NPZ / PNG
         │
         ▼
-  mcp_picoscope/control.py       ← actions and the sweep engine (shared by both surfaces)
+  picoscope_mcp/control.py       ← actions and the sweep engine (shared by both surfaces)
         │
         ▼
-  mcp_picoscope/ui.py            ← local display (HTTP 8071) + Edge window
-  mcp_picoscope/ui.html          ← the page: trace, readouts, MCP activity
+  picoscope_mcp/ui.py            ← local display (HTTP 8071) + Edge window
+  picoscope_mcp/ui.html          ← the page: trace, readouts, MCP activity
 ```
 
 **Load-bearing design decisions**

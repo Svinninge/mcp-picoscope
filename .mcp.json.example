@@ -3,7 +3,7 @@
   "mcpServers": {
     "picoscope": {
       "command": "<checkout>\\.venv\\Scripts\\python.exe",
-      "args": ["-m", "mcp_picoscope.server"],
+      "args": ["-m", "picoscope_mcp.server"],
       "cwd": "<checkout>",
       "env": {
         "CAPTURE_DIR": "<checkout>\\captures"

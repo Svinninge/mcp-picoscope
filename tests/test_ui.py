@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from mcp_picoscope import ui
+from picoscope_mcp import ui
 
 
 @pytest.fixture(autouse=True)
@@ -212,7 +212,7 @@ def test_only_whitelisted_actions_run(monkeypatch):
 
 def test_autoset_from_the_page_runs_the_same_code_as_the_tool(monkeypatch):
     """One implementation, or the two surfaces drift apart."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     calls: list = []
     monkeypatch.setattr(ui, "_session", "the-session")
@@ -229,7 +229,7 @@ def test_autoset_from_the_page_runs_the_same_code_as_the_tool(monkeypatch):
 
 def test_a_control_action_shows_up_in_the_activity_log(monkeypatch):
     """The LLM and the user must see what the other one did."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     monkeypatch.setattr(ui, "_session", "s")
     monkeypatch.setattr(
@@ -246,8 +246,8 @@ def test_a_control_action_shows_up_in_the_activity_log(monkeypatch):
 
 
 def sweep_session(signal=None):
-    from mcp_picoscope.backends.mock import MockBackend, MockSignal
-    from mcp_picoscope.scope import ScopeSession
+    from picoscope_mcp.backends.mock import MockBackend, MockSignal
+    from picoscope_mcp.scope import ScopeSession
 
     session = ScopeSession()
     backend = MockBackend(signal or MockSignal("sine", 1000.0, 1.0))
@@ -257,7 +257,7 @@ def sweep_session(signal=None):
 
 
 def test_a_sweep_captures_until_stopped():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     try:
@@ -273,7 +273,7 @@ def test_a_sweep_captures_until_stopped():
 
 
 def test_single_stops_itself_after_one():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     try:
@@ -289,7 +289,7 @@ def test_single_stops_itself_after_one():
 
 def test_the_lock_is_free_between_sweeps():
     """An MCP call must never wait for the loop, only for one capture."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     try:
@@ -303,8 +303,8 @@ def test_the_lock_is_free_between_sweeps():
 
 
 def test_a_trigger_that_never_fires_is_a_state_not_a_crash():
-    from mcp_picoscope import control
-    from mcp_picoscope.scope import TriggerConfig
+    from picoscope_mcp import control
+    from picoscope_mcp.scope import TriggerConfig
 
     session = sweep_session()
     session.backend.set_trigger(
@@ -325,7 +325,7 @@ def test_a_trigger_that_never_fires_is_a_state_not_a_crash():
 
 def test_normal_arms_a_trigger_that_was_free_running():
     """Without this the button was a no-op from the state a scope opens in."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     assert session.trigger.mode == "auto"
@@ -339,7 +339,7 @@ def test_normal_arms_a_trigger_that_was_free_running():
 
 
 def test_a_level_dragged_with_a_mouse_is_not_stored_to_16_digits():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     applied = control.set_trigger(session, "edge", 1.7111404667547336, "rising")
@@ -353,7 +353,7 @@ def test_a_window_too_short_to_see_the_signal_widens_itself():
     so the retune that would widen it never fires. Widening after a few empty
     sweeps is what breaks the cycle.
     """
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     try:
@@ -373,8 +373,8 @@ def test_a_window_too_short_to_see_the_signal_widens_itself():
 
 def test_autoset_hands_its_window_to_a_running_sweep():
     """Otherwise autoset is invisible: the sweep overwrites it 150 ms later."""
-    from mcp_picoscope import control
-    from mcp_picoscope.backends.mock import MockSignal
+    from picoscope_mcp import control
+    from picoscope_mcp.backends.mock import MockSignal
 
     session = sweep_session(MockSignal("sine", 50.0, 1.0))
     try:
@@ -390,7 +390,7 @@ def test_autoset_hands_its_window_to_a_running_sweep():
 
 def test_the_sweep_leaves_a_chosen_window_alone_while_the_signal_holds():
     """Autoset picks five periods; the sweep preferring ten must not overrule it."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     try:
@@ -406,8 +406,8 @@ def test_the_sweep_leaves_a_chosen_window_alone_while_the_signal_holds():
 
 def test_autoset_puts_the_trigger_level_at_half_of_peak_to_peak():
     """Zero is the wrong default: a 0..3 V signal never crosses it."""
-    from mcp_picoscope import control
-    from mcp_picoscope.backends.mock import MockSignal
+    from picoscope_mcp import control
+    from picoscope_mcp.backends.mock import MockSignal
 
     session = sweep_session(MockSignal("sine", 1000.0, 1.5, offset_v=1.5, noise_v=0.0))
     result = control.autoset(session)
@@ -420,8 +420,8 @@ def test_autoset_puts_the_trigger_level_at_half_of_peak_to_peak():
 
 def test_autoset_gives_back_the_trigger_mode_it_found():
     """An armed edge trigger must survive an autoset; only the level moves."""
-    from mcp_picoscope import control
-    from mcp_picoscope.backends.mock import MockSignal
+    from picoscope_mcp import control
+    from picoscope_mcp.backends.mock import MockSignal
 
     session = sweep_session(MockSignal("sine", 1000.0, 1.5, offset_v=1.5, noise_v=0.0))
     control.set_trigger(session, "edge", 0.0, "falling", auto_trigger_ms=250)
@@ -447,14 +447,14 @@ def test_a_frozen_display_never_launches_a_window(monkeypatch):
 
 
 def offset_session():
-    from mcp_picoscope.backends.mock import MockSignal
+    from picoscope_mcp.backends.mock import MockSignal
 
     # 0..3 V: the bench signal's shape, midpoint 1.5 V in DC, 0 V in AC.
     return sweep_session(MockSignal("sine", 1000.0, 1.5, offset_v=1.5, noise_v=0.0))
 
 
 def test_switching_to_ac_moves_the_trigger_level_to_zero():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = offset_session()
     control.set_trigger(session, "edge", 1.5, "rising")
@@ -465,7 +465,7 @@ def test_switching_to_ac_moves_the_trigger_level_to_zero():
 
 
 def test_switching_back_to_dc_moves_it_back_to_the_signal():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = offset_session()
     control.configure_channel(session, coupling="AC")
@@ -474,7 +474,7 @@ def test_switching_back_to_dc_moves_it_back_to_the_signal():
 
 
 def test_a_range_change_alone_leaves_the_trigger_where_it_was():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = offset_session()
     control.set_trigger(session, "edge", 1.234, "falling")
@@ -485,8 +485,8 @@ def test_a_range_change_alone_leaves_the_trigger_where_it_was():
 
 
 def test_an_unknown_coupling_is_refused_with_the_valid_ones():
-    from mcp_picoscope import control
-    from mcp_picoscope.scope import ScopeError
+    from picoscope_mcp import control
+    from picoscope_mcp.scope import ScopeError
 
     session = offset_session()
     with pytest.raises(ScopeError, match="DC, AC"):
@@ -494,7 +494,7 @@ def test_an_unknown_coupling_is_refused_with_the_valid_ones():
 
 
 def test_the_coupling_button_runs_the_same_code_as_the_tool(monkeypatch):
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     calls: list = []
     monkeypatch.setattr(ui, "_session", "the-session")
@@ -513,8 +513,8 @@ def test_the_mock_ac_coupling_settles_like_the_hardware():
     still there. Without this the mock removed it instantly and a trigger set from
     an unsettled capture passed every test, while the hardware put it at 1.258 V
     on a signal centred at 0 V."""
-    from mcp_picoscope.analysis import measure
-    from mcp_picoscope.scope import ChannelConfig
+    from picoscope_mcp.analysis import measure
+    from picoscope_mcp.scope import ChannelConfig
 
     session = offset_session()
     backend = session.backend
@@ -527,7 +527,7 @@ def test_the_mock_ac_coupling_settles_like_the_hardware():
 
 
 def test_the_trigger_level_is_taken_after_ac_has_settled():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = offset_session()
     control.set_trigger(session, "edge", 1.5, "rising")
@@ -548,7 +548,7 @@ def test_switching_coupling_in_normal_mode_does_not_wait_for_the_old_level():
     trigger waited out its timeout and the whole switch failed — measured on the
     hardware. The settling captures run free-running now.
     """
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = offset_session()
     control.configure_channel(session, coupling="AC")
@@ -562,7 +562,7 @@ def test_switching_coupling_in_normal_mode_does_not_wait_for_the_old_level():
 
 def test_the_sweep_bounds_how_long_a_capture_may_wait_for_a_trigger():
     """Holding the lock for a 6 s trigger wait froze the display."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     seen: list = []
@@ -622,7 +622,7 @@ def test_the_display_serves_the_last_frame_while_the_device_is_busy(monkeypatch)
 
 
 def test_the_1_2_5_steps_move_one_step_and_stop_at_the_ends():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     steps = control.TIME_PER_DIV_STEPS
     assert control._next_step(1e-3, +1) == 2e-3
@@ -636,7 +636,7 @@ def test_the_1_2_5_steps_move_one_step_and_stop_at_the_ends():
 
 def test_a_manual_timebase_is_not_overwritten_by_the_following():
     """The trap from issue #1: set time/div, and two seconds later it is undone."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()  # 1 kHz: the following would want 10 ms
     try:
@@ -652,7 +652,7 @@ def test_a_manual_timebase_is_not_overwritten_by_the_following():
 
 
 def test_auto_hands_the_timebase_back_to_the_following():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     try:
@@ -672,7 +672,7 @@ def test_auto_hands_the_timebase_back_to_the_following():
 
 
 def test_autoset_takes_a_manual_timebase_back():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     try:
@@ -686,7 +686,7 @@ def test_autoset_takes_a_manual_timebase_back():
 
 def test_a_manual_timebase_too_slow_for_the_signal_warns_that_it_may_alias():
     """And the warning must come from the trusted frequency, not the alias."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()  # 1 kHz
     try:
@@ -708,7 +708,7 @@ def test_a_manual_timebase_too_slow_for_the_signal_warns_that_it_may_alias():
 
 
 def test_the_time_div_buttons_run_the_same_code_as_the_tool(monkeypatch):
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     calls: list = []
     monkeypatch.setattr(ui, "_session", "s")
@@ -725,7 +725,7 @@ def test_a_faster_signal_seen_on_a_manual_timebase_raises_the_alias_reference():
     562 kHz alias at 0.2 ms/div showed no warning. An alias only reads lower, so
     a higher well-resolved frequency is the signal itself — but a lower one must
     never lower the reference, or the alias would vouch for itself."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     r = control.runner(session)
@@ -742,7 +742,7 @@ def test_a_faster_signal_seen_on_a_manual_timebase_raises_the_alias_reference():
 
 def test_volt_div_steps_are_round_and_ride_the_narrowest_covering_range():
     """1.25 V/div was the +-5 V range over four: true, and unreadable."""
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     ranges = session.device.voltage_ranges_v
@@ -760,7 +760,7 @@ def test_volt_div_steps_are_round_and_ride_the_narrowest_covering_range():
 
 
 def test_an_explicit_range_drops_the_round_scale():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()
     control.configure_channel(session, volts_per_div=0.5)
@@ -768,7 +768,7 @@ def test_an_explicit_range_drops_the_round_scale():
 
 
 def test_autoset_picks_a_round_volt_div_and_time_div():
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     session = sweep_session()  # 1 kHz, 1 V amplitude
     control.autoset(session)
@@ -784,13 +784,13 @@ def test_autoset_picks_a_round_volt_div_and_time_div():
     [(5.24e-3, 1e-2), (1e-3, 1e-3), (1.3e-4, 2e-4), (3e-5, 5e-5), (0.06, 0.1)],
 )
 def test_the_followed_window_rounds_up_to_ten_1_2_5_divisions(seconds, expected):
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     assert control._nice_window(seconds) == pytest.approx(expected)
 
 
 def test_the_volt_div_buttons_run_the_same_code_as_the_tool_path(monkeypatch):
-    from mcp_picoscope import control
+    from picoscope_mcp import control
 
     calls: list = []
     monkeypatch.setattr(ui, "_session", "s")
@@ -819,21 +819,21 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\0" * 16
     ],
 )
 def test_a_screenshot_name_can_only_be_a_name(name, expected):
-    from mcp_picoscope.export import safe_name
+    from picoscope_mcp.export import safe_name
 
     assert safe_name(name) == expected
 
 
 def test_an_empty_screenshot_name_is_refused():
-    from mcp_picoscope.export import safe_name
-    from mcp_picoscope.scope import ScopeError
+    from picoscope_mcp.export import safe_name
+    from picoscope_mcp.scope import ScopeError
 
     with pytest.raises(ScopeError):
         safe_name(" /.. ")
 
 
 def test_a_screenshot_never_overwrites_and_never_leaves_the_folder(tmp_path, monkeypatch):
-    from mcp_picoscope.export import save_screenshot
+    from picoscope_mcp.export import save_screenshot
 
     monkeypatch.setenv("CAPTURE_DIR", str(tmp_path))
     first = save_screenshot(PNG, "../trace")
@@ -844,8 +844,8 @@ def test_a_screenshot_never_overwrites_and_never_leaves_the_folder(tmp_path, mon
 
 
 def test_a_screenshot_must_be_a_png(tmp_path, monkeypatch):
-    from mcp_picoscope.export import save_screenshot
-    from mcp_picoscope.scope import ScopeError
+    from picoscope_mcp.export import save_screenshot
+    from picoscope_mcp.scope import ScopeError
 
     monkeypatch.setenv("CAPTURE_DIR", str(tmp_path))
     with pytest.raises(ScopeError):

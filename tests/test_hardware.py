@@ -27,8 +27,8 @@ from tests.test_stdio import payload  # noqa: E402
 
 
 def hardware_present() -> bool:
-    from mcp_picoscope.backends.ps2000 import PS2000Backend
-    from mcp_picoscope.scope import ScopeError
+    from picoscope_mcp.backends.ps2000 import PS2000Backend
+    from picoscope_mcp.scope import ScopeError
 
     try:
         return bool(PS2000Backend().list_devices())
@@ -39,7 +39,7 @@ def hardware_present() -> bool:
 async def run() -> None:
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "mcp_picoscope.server"],
+        args=["-m", "picoscope_mcp.server"],
         cwd=str(ROOT),
         env={**os.environ, "PICOSCOPE_UI": "0"},  # no window from a test run
     )

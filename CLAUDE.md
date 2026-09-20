@@ -30,21 +30,22 @@ single capture would blow the context window.
 ## Layout
 
 ```
-mcp_picoscope/server.py          The MCP surface. Thin: it translates, it does not compute.
-mcp_picoscope/scope.py           Value types, backend protocol, ScopeSession (the lock)
-mcp_picoscope/analysis.py        Vpp/RMS/frequency/duty + min-max decimation
-mcp_picoscope/control.py         Actions and the sweep engine — shared by MCP and the page
-mcp_picoscope/export.py          CSV / NPZ / PNG under captures/
-mcp_picoscope/app.py             Desktop app: owns the scope, display, MCP over HTTP (8090)
-mcp_picoscope/ui.py              Local web server + Edge launch (port 8071)
-mcp_picoscope/ui.html            The page: trace, readouts, MCP activity
-mcp_picoscope/backends/mock.py   Simulated signal source — the tests' ground truth
-mcp_picoscope/backends/ps2000.py Real hardware via ps2000.dll. Verified against a PS2104.
+picoscope_mcp/server.py          The MCP surface. Thin: it translates, it does not compute.
+picoscope_mcp/scope.py           Value types, backend protocol, ScopeSession (the lock)
+picoscope_mcp/analysis.py        Vpp/RMS/frequency/duty + min-max decimation
+picoscope_mcp/control.py         Actions and the sweep engine — shared by MCP and the page
+picoscope_mcp/export.py          CSV / NPZ / PNG under captures/
+picoscope_mcp/app.py             Desktop app: owns the scope, display, MCP over HTTP (8090)
+picoscope_mcp/ui.py              Local web server + Edge launch (port 8071)
+picoscope_mcp/ui.html            The page: trace, readouts, MCP activity
+picoscope_mcp/backends/mock.py   Simulated signal source — the tests' ground truth
+picoscope_mcp/backends/ps2000.py Real hardware via ps2000.dll. Verified against a PS2104.
 tests/test_analysis.py           Measurements against the mock's known signals
 tests/test_stdio.py              Smoke test over the real stdio transport (mock)
 tests/test_hardware.py           Smoke test against a real scope; skipped without one
 tests/test_ui.py                 Window rules, view memory, sweep engine
 tests/test_page.py               node --check over the page's script
+evaluations/                     Q/A pairs that measure whether a model can drive the server
 tools/step0_verify.py            Hardware identity: variant, ranges, timebases
 tools/verify_volt_scale.py       The scale against a known voltage (MAX_ADC)
 tools/verify_zero.py             Offset, shorted input
@@ -56,7 +57,19 @@ packaging/build_exe.py           Builds dist/PicoScope.exe; every option explain
 tests/test_app.py                The app's close detection
 ```
 
-**Versions:** `SYSTEM_VERSION` in `mcp_picoscope/__init__.py` mirrors the latest
+**The package is `picoscope_mcp`, not `mcp_picoscope`** — the MCP convention is `{service}_mcp`
+(Python) and `{service}-mcp` (distribution); renamed 2026-09-20. `.mcp.json` and the user-level
+`.claude.json` both point at `-m picoscope_mcp.server`, and the package must be reinstalled in the
+venv after a rename or the egg link points at a folder that no longer exists.
+
+**Every tool is registered through the `tool()` decorator in `server.py`, which now takes
+annotations.** A new tool must state its `ToolAnnotations` there: `readOnly` only for the four that
+just report (`list_devices`, `get_device_info`, `get_server_info`, `measure`), `destructive` for
+`close_device`, which drops held captures. The decorator also keeps `TOOL_NAMES`, because
+`MCPServer.list_tools()` is a coroutine and `get_server_info` is a plain function — do not reach
+into the server's private tool manager for the list again.
+
+**Versions:** `SYSTEM_VERSION` in `picoscope_mcp/__init__.py` mirrors the latest
 git tag, `deploy_version.txt` the deploy. Both are shown by `version_line()` —
 in `get_server_info()` and in the display header.
 
@@ -65,7 +78,7 @@ in `get_server_info()` and in the display header.
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests -q          # everything
 .\.venv\Scripts\python.exe tests\test_stdio.py         # smoke test, starts the server
-.\.venv\Scripts\python.exe -m mcp_picoscope.server     # the server by hand (waits on stdio)
+.\.venv\Scripts\python.exe -m picoscope_mcp.server     # the server by hand (waits on stdio)
 ```
 
 Register the server with Claude Code by copying `.mcp.json.example` to

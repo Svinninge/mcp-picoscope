@@ -1,4 +1,8 @@
-# File version: v0.05
+# File version: v0.06
+# Description: MCP surface for the PicoScope — translates tool calls to the control layer
+# Author: Per Norrfors
+# Created: 2026-09-12
+# Modified: 2026-09-20 - Package renamed to picoscope_mcp, tool annotations, public list_tools (Claude)
 """MCP surface for the PicoScope. Thin: it translates, it does not compute.
 
 Every tool answers with a summary — statistics, a decimated curve, a file path —
@@ -15,6 +19,7 @@ from typing import Any, Callable
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.types import ToolAnnotations
 
 from . import control, ui, version_line
 from .analysis import measure as measure_capture
@@ -27,7 +32,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
-log = logging.getLogger("mcp_picoscope")
+log = logging.getLogger("picoscope_mcp")
 
 server = MCPServer(
     name="picoscope",
@@ -44,8 +49,21 @@ server = MCPServer(
 )
 session = ScopeSession()
 
+# Registered tool names, in registration order. MCPServer.list_tools() is a
+# coroutine and get_server_info is a plain function, and reaching into the
+# server's private tool manager breaks on an SDK upgrade — so the decorator
+# keeps the list itself.
+TOOL_NAMES: list[str] = []
 
-def tool(fn: Callable) -> Callable:
+
+def tool(
+    title: str,
+    *,
+    read_only: bool,
+    destructive: bool = False,
+    idempotent: bool = True,
+    open_world: bool = True,
+) -> Callable[[Callable], Callable]:
     """Register a tool, turning ScopeError into a message the caller can read.
 
     Anything else would surface as "Error executing tool X", which helps nobody
@@ -54,32 +72,50 @@ def tool(fn: Callable) -> Callable:
     This is also where the display hangs: every tool call passes through here
     exactly once, so the window opens and the activity list fills in one place
     instead of in twelve.
+
+    The annotations are the only thing a client has to decide whether a call
+    needs asking about first. A scope is shared hardware: arming it, moving a
+    range or rebooting a sweep are not read-only, even though nothing is
+    destroyed. Only the two that drop data (close_device) or overwrite a device
+    setting the user chose are flagged further.
     """
 
-    @functools.wraps(fn)
-    def wrapper(*args, **kwargs):
-        ui.ensure_started(session)
-        try:
-            with session.lock:
-                result = fn(*args, **kwargs)
-        except ScopeError as exc:
-            log.warning("%s: %s", fn.__name__, exc)
-            ui.record(fn.__name__, "fel", str(exc))
-            raise ToolError(str(exc)) from exc
-        except Exception as exc:  # unexpected, but still must be readable
-            log.exception("%s failed", fn.__name__)
-            ui.record(fn.__name__, "fel", str(exc))
-            raise ToolError(f"{type(exc).__name__} in {fn.__name__}: {exc}") from exc
-        ui.record(fn.__name__, "ok")
-        return result
+    annotations = ToolAnnotations(
+        title=title,
+        readOnlyHint=read_only,
+        destructiveHint=destructive,
+        idempotentHint=idempotent,
+        openWorldHint=open_world,
+    )
 
-    return server.tool()(wrapper)
+    def register(fn: Callable) -> Callable:
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            ui.ensure_started(session)
+            try:
+                with session.lock:
+                    result = fn(*args, **kwargs)
+            except ScopeError as exc:
+                log.warning("%s: %s", fn.__name__, exc)
+                ui.record(fn.__name__, "fel", str(exc))
+                raise ToolError(str(exc)) from exc
+            except Exception as exc:  # unexpected, but still must be readable
+                log.exception("%s failed", fn.__name__)
+                ui.record(fn.__name__, "fel", str(exc))
+                raise ToolError(f"{type(exc).__name__} in {fn.__name__}: {exc}") from exc
+            ui.record(fn.__name__, "ok")
+            return result
+
+        TOOL_NAMES.append(fn.__name__)
+        return server.tool(annotations=annotations)(wrapper)
+
+    return register
 
 
 # -- device ---------------------------------------------------------------
 
 
-@tool
+@tool("List devices", read_only=True)
 def list_devices() -> dict:
     """List connected PicoScopes. Always reports the mock as available too.
 
@@ -97,7 +133,7 @@ def list_devices() -> dict:
     return {"devices": devices, "hardware_note": hardware_note}
 
 
-@tool
+@tool("Open the scope", read_only=False)
 def open_device(backend: str = "auto") -> dict:
     """Open the scope. backend: 'auto' | 'ps2000' | 'mock'.
 
@@ -137,7 +173,7 @@ def open_device(backend: str = "auto") -> dict:
     return {"warning": warning, **session.state()}
 
 
-@tool
+@tool("Close the scope", read_only=False, destructive=True)
 def close_device() -> dict:
     """Close the device and release the USB handle."""
     control.stop_for_shutdown()  # no thread may keep capturing from it
@@ -150,14 +186,14 @@ def close_device() -> dict:
     return {"open": False, "note": "Device closed; held captures were dropped."}
 
 
-@tool
+@tool("Device info", read_only=True)
 def get_device_info() -> dict:
     """Model, serial, driver version, channels, ranges and sampling limits."""
     session.require_open()
     return session.state()["device"]
 
 
-@tool
+@tool("Server info", read_only=True, open_world=False)
 def get_server_info() -> dict:
     """Server version, capture directory and the URL of the live display."""
     from .export import capture_dir
@@ -167,11 +203,11 @@ def get_server_info() -> dict:
         "capture_dir": str(capture_dir()),
         "ui_url": ui.url(),
         "ui_enabled": ui.enabled(),
-        "tools": sorted(t.name for t in server._tool_manager.list_tools()),
+        "tools": sorted(TOOL_NAMES),
     }
 
 
-@tool
+@tool("Show the live display", read_only=False)
 def open_ui(force: bool = False) -> dict:
     """Show the live display and return its URL.
 
@@ -205,7 +241,7 @@ def open_ui(force: bool = False) -> dict:
 # -- configuration --------------------------------------------------------
 
 
-@tool
+@tool("Configure channel A", read_only=False)
 def configure_channel(
     range_v: float = 5.0,
     coupling: str = "DC",
@@ -232,7 +268,7 @@ def configure_channel(
     return control.configure_channel(session, range_v, coupling, enabled)
 
 
-@tool
+@tool("Configure the trigger", read_only=False)
 def configure_trigger(
     mode: str = "auto",
     threshold_v: float = 0.0,
@@ -252,7 +288,7 @@ def configure_trigger(
     )
 
 
-@tool
+@tool("Configure the simulated signal", read_only=False)
 def configure_mock_signal(
     waveform: str = "sine",
     frequency_hz: float = 1000.0,
@@ -281,7 +317,7 @@ def configure_mock_signal(
 # -- acquisition ----------------------------------------------------------
 
 
-@tool
+@tool("Capture one block", read_only=False, idempotent=False)
 def capture_block(duration_s: float = 0.01, samples: int = 4096) -> dict:
     """Capture one block and return statistics plus a decimated curve.
 
@@ -292,13 +328,13 @@ def capture_block(duration_s: float = 0.01, samples: int = 4096) -> dict:
     return control.capture_block(session, duration_s, samples)
 
 
-@tool
+@tool("Measure a held capture", read_only=True)
 def measure(capture_id: str) -> dict:
     """Vpp, Vmin/Vmax, mean, RMS, frequency, period and duty cycle of a capture."""
     return measure_capture(session.get_capture(capture_id))
 
 
-@tool
+@tool("Export a capture to disk", read_only=False, idempotent=False)
 def export_capture(capture_id: str, format: str = "csv", name: str = "") -> dict:
     """Write a capture to disk. format: 'csv' | 'npz' | 'png'. Returns the path.
 
@@ -316,7 +352,7 @@ def export_capture(capture_id: str, format: str = "csv", name: str = "") -> dict
     }
 
 
-@tool
+@tool("Autoset range and timebase", read_only=False, idempotent=False)
 def autoset() -> dict:
     """Find a range and timebase that show the signal — the AutoSetup button.
 
@@ -327,7 +363,7 @@ def autoset() -> dict:
     return control.autoset(session)
 
 
-@tool
+@tool("Start continuous capture", read_only=False, idempotent=False)
 def start_sweep(mode: str = "auto", window_s: float = 0.0) -> dict:
     """Capture continuously until stopped. mode: 'auto' | 'normal' | 'single'.
 
@@ -339,7 +375,7 @@ def start_sweep(mode: str = "auto", window_s: float = 0.0) -> dict:
     return control.start_sweep(session, mode, window_s or None)
 
 
-@tool
+@tool("Set the timebase", read_only=False)
 def set_time_per_div(time_per_div_s: float = 0.0) -> dict:
     """Set the timebase in seconds per division (ten divisions across). 0 = auto.
 
@@ -352,7 +388,7 @@ def set_time_per_div(time_per_div_s: float = 0.0) -> dict:
     return control.set_time_per_div(session, time_per_div_s or None)
 
 
-@tool
+@tool("Stop continuous capture", read_only=False)
 def stop_sweep() -> dict:
     """Stop the continuous capture started by start_sweep."""
     return control.stop_sweep(session)
@@ -371,7 +407,7 @@ def state_resource() -> dict:
 
 
 def main() -> None:
-    """Entry point for `python -m mcp_picoscope.server` and the console script."""
+    """Entry point for `python -m picoscope_mcp.server` and the console script."""
     try:
         server.run(transport="stdio")
     finally:

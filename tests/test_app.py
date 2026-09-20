@@ -8,7 +8,7 @@ merely slow to open, and never noticing that it closed.
 
 from __future__ import annotations
 
-from mcp_picoscope.app import wait_for_window_close
+from picoscope_mcp.app import wait_for_window_close
 
 
 class FakeClock:
@@ -75,7 +75,7 @@ def test_the_wait_can_be_stopped_from_outside():
 def test_a_client_hanging_up_is_filtered_but_real_errors_are_not():
     import logging
 
-    from mcp_picoscope.app import _IgnoreProactorResets
+    from picoscope_mcp.app import _IgnoreProactorResets
 
     def record(exc):
         try:
@@ -97,8 +97,8 @@ def test_the_http_server_starts_without_a_console(monkeypatch):
     import socket
     import sys
 
-    from mcp_picoscope import server
-    from mcp_picoscope.app import McpHttpServer
+    from picoscope_mcp import server
+    from picoscope_mcp.app import McpHttpServer
 
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
