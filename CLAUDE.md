@@ -23,7 +23,8 @@ single capture would blow the context window.
   **Note:** PLAN.md describes the target design. The code is the truth —
   `capture_streaming` appears in the plan's tool table but is not built (v2, see
   TODO.md).
-- **[TODO.md](TODO.md)** — the active backlog, hand-maintained in this repo.
+- **[TODO.md](TODO.md)** — the generated mirror of open GitHub issues, plus a hand-written work log
+  of what was done and why.
 - **[README.md](README.md)** — installation and getting started.
 
 ## Layout
@@ -253,6 +254,17 @@ executing tool X" in the session, which helps nobody who cannot see the screen.
 **`mcp` 2.x, not 1.x.** `FastMCP` has been called `MCPServer` since 2.0
 (`from mcp.server.mcpserver import MCPServer`). Use a dedicated virtualenv — do
 not install into the global Python.
+
+## Tasks — GitHub issues are the source of truth
+
+Tasks live as issues in
+[Svinninge/mcp-picoscope](https://github.com/Svinninge/mcp-picoscope/issues). [TODO.md](TODO.md)
+mirrors them; the mirror block is generated, so open, edit and close tasks on GitHub. Refresh it
+with:
+
+```
+python "C:\Users\perno\OneDrive\Dokument\Claude\scripts\sync-todo-issues.py" mcp-picoscope
+```
 
 ## Hardware
 
