@@ -88,6 +88,11 @@ the hardware: the PS2104 opens in exactly one process. An app that owned the
 device while Claude started a server of its own would leave them fighting over
 it. One owner, two ways in.
 
+A built, unsigned Windows binary is attached to each
+[release](https://github.com/Svinninge/mcp-picoscope/releases/latest); it needs
+`ps2000.dll` from a PicoScope 7 / PicoSDK installation, which is deliberately not
+bundled. Or build it yourself:
+
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e .[build]
 .\.venv\Scripts\python.exe packaging\build_exe.py     # → dist\PicoScope.exe, about 50 MB
