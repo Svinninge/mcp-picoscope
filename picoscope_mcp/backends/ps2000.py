@@ -1,4 +1,4 @@
-# File version: v0.04
+# File version: v0.05
 """Real hardware backend for the PicoScope 2104 via the legacy ps2000 driver.
 
 STATUS: verified against the real device 2026-09-12 (PLAN.md step 0). The unit
@@ -21,6 +21,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -42,15 +43,39 @@ log = logging.getLogger(__name__)
 # which on Windows searches PATH — and nothing puts Pico's directory there.
 # PicoSDK installs to SDK\lib; the PicoScope 7 application ships the same
 # driver DLLs in its own directory, which is what this machine actually has.
-DLL_NAME = "ps2000.dll"
+#
+# On macOS the driver is libps2000.dylib. find_library there searches
+# DYLD_LIBRARY_PATH, so the same trick applies with that variable. PicoSDK
+# installs it under PicoSDK.framework; the PicoScope 7 app bundle carries its
+# own copy. Whether an arm64 build for the PS2104 exists is still unverified,
+# and the app-bundle paths are educated guesses to be checked on the Mac;
+# PICOSDK_DIR overrides them either way.
+
+if sys.platform == "darwin":
+    DLL_NAME = "libps2000.dylib"
+    DLL_CANDIDATES: tuple[str, ...] = (
+        "/Library/Frameworks/PicoSDK.framework/Libraries/libps2000",
+        "/Applications/PicoScope 7 T&M.app/Contents/Resources/lib",
+        "/Applications/PicoScope 7 T&M.app/Contents/MonoBundle",
+        "/Applications/PicoScope 7 T&M Stable.app/Contents/Resources/lib",
+        "/Applications/PicoScope 7 T&M Stable.app/Contents/MonoBundle",
+    )
+    DLL_SEARCH_ENV = "DYLD_LIBRARY_PATH"
+elif sys.platform == "win32":
+    DLL_NAME = "ps2000.dll"
+    DLL_CANDIDATES = (
+        r"C:\Program Files\Pico Technology\SDK\lib",
+        r"C:\Program Files\Pico Technology\PicoScope 7 T&M Stable",
+        r"C:\Program Files\Pico Technology\PicoScope 7 T&M Early Access",
+        r"C:\Program Files\Pico Technology\PicoScope 7 Automotive Stable",
+        r"C:\Program Files\Pico Technology\PicoScope 6",
+    )
+    DLL_SEARCH_ENV = "PATH"
+else:
+    DLL_NAME = "libps2000.so"
+    DLL_CANDIDATES = ("/opt/picoscope/lib",)
+    DLL_SEARCH_ENV = "LD_LIBRARY_PATH"
 DLL_DIR_ENV = "PICOSDK_DIR"
-DLL_CANDIDATES = (
-    r"C:\Program Files\Pico Technology\SDK\lib",
-    r"C:\Program Files\Pico Technology\PicoScope 7 T&M Stable",
-    r"C:\Program Files\Pico Technology\PicoScope 7 T&M Early Access",
-    r"C:\Program Files\Pico Technology\PicoScope 7 Automotive Stable",
-    r"C:\Program Files\Pico Technology\PicoScope 6",
-)
 
 # ps2000 voltage range enum. The legacy driver has no call that reports which
 # ranges a given variant supports, so this table is the one thing that cannot
@@ -121,9 +146,12 @@ def _ensure_dll_on_path() -> None:
         return
     if hasattr(os, "add_dll_directory"):  # Windows: dependent DLLs of ps2000
         os.add_dll_directory(str(directory))
-    if str(directory) not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = str(directory) + os.pathsep + os.environ.get("PATH", "")
-        log.info("added %s to PATH for %s", directory, DLL_NAME)
+    current = os.environ.get(DLL_SEARCH_ENV, "")
+    if str(directory) not in current:
+        os.environ[DLL_SEARCH_ENV] = (
+            str(directory) + (os.pathsep + current if current else "")
+        )
+        log.info("added %s to %s for %s", directory, DLL_SEARCH_ENV, DLL_NAME)
 
 
 def _load_driver():
