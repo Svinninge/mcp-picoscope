@@ -50,7 +50,6 @@ log = logging.getLogger(__name__)
 # own copy. Whether an arm64 build for the PS2104 exists is still unverified,
 # and the app-bundle paths are educated guesses to be checked on the Mac;
 # PICOSDK_DIR overrides them either way.
-
 if sys.platform == "darwin":
     DLL_NAME = "libps2000.dylib"
     DLL_CANDIDATES: tuple[str, ...] = (

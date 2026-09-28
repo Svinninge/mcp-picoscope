@@ -534,7 +534,6 @@ def _open_edge(target: str) -> None:
         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
         start_new_session=sys.platform != "win32",
     )
-
     log.info("opened Edge at %s (%dx%d)", target, width, height)
 
 

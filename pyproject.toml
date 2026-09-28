@@ -11,7 +11,6 @@ dependencies = [
     "psutil>=5.9; sys_platform != 'win32'",
 ]
 
-
 [project.optional-dependencies]
 # Real hardware. Requires a separately installed 64-bit PicoSDK (ps2000.dll).
 hardware = ["picosdk"]
