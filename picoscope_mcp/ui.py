@@ -1,4 +1,4 @@
-# File version: v0.06
+# File version: v0.07
 """Local scope display, opened in an Edge app window when the server is used.
 
 The MCP session sees numbers; a person wants to see the waveform. This serves
@@ -35,9 +35,11 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
+import webbrowser
 from collections import deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -94,10 +96,26 @@ PAGE = Path(__file__).with_name("ui.html")
 # it gets the previous snapshot, marked busy.
 STATE_LOCK_WAIT_S = 0.25
 
-EDGE_CANDIDATES = (
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-)
+# Chromium-family browsers that take --app and --user-data-dir. Edge first on
+# every OS; on macOS Chrome is an acceptable stand-in. PICOSCOPE_UI_BROWSER_PATH
+# names a binary explicitly. Without any of them the page opens in the default
+# browser as an ordinary tab.
+BROWSER_PATH_ENV = "PICOSCOPE_UI_BROWSER_PATH"
+if sys.platform == "win32":
+    EDGE_CANDIDATES: tuple[str, ...] = (
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    )
+    EDGE_COMMANDS: tuple[str, ...] = ("msedge",)
+elif sys.platform == "darwin":
+    EDGE_CANDIDATES = (
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    )
+    EDGE_COMMANDS = ()
+else:
+    EDGE_CANDIDATES = ()
+    EDGE_COMMANDS = ("microsoft-edge", "google-chrome", "chromium")
 
 # The display runs in its own Edge profile. That costs a cold start, and buys
 # the one thing worth paying for: every process using this directory is ours,
@@ -396,10 +414,16 @@ def _ensure_server(session: Any) -> str | None:
 
 
 def _edge_path() -> str | None:
+    override = os.environ.get(BROWSER_PATH_ENV)
+    if override and Path(override).is_file():
+        return override
     for candidate in EDGE_CANDIDATES:
         if Path(candidate).is_file():
             return candidate
-    return shutil.which("msedge")
+    for command in EDGE_COMMANDS:
+        if found := shutil.which(command):
+            return found
+    return None
 
 
 def close_stale_windows() -> int:
@@ -412,6 +436,8 @@ def close_stale_windows() -> int:
     """
     if not EDGE_PROFILE_DIR.exists():
         return 0
+    if sys.platform != "win32":
+        return _close_stale_windows_psutil()
     script = (
         "Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
         f"Where-Object {{ $_.CommandLine -like '*{EDGE_PROFILE_DIR.name}*' }} | "
@@ -434,6 +460,32 @@ def close_stale_windows() -> int:
     return count
 
 
+def _close_stale_windows_psutil() -> int:
+    """close_stale_windows for macOS and Linux, where there is no PowerShell.
+
+    Same rule: only processes whose command line names our own profile.
+    """
+    try:
+        import psutil
+    except ImportError:
+        log.debug("psutil missing; stale display windows are not swept")
+        return 0
+    count = 0
+    for proc in psutil.process_iter(["pid", "cmdline"]):
+        try:
+            cmdline = proc.info.get("cmdline") or []
+            if proc.pid != os.getpid() and any(
+                EDGE_PROFILE_DIR.name in part for part in cmdline
+            ):
+                proc.kill()
+                count += 1
+        except (psutil.Error, OSError) as exc:
+            log.debug("could not stop %s: %s", proc.pid, exc)
+    if count:
+        log.info("closed %d stale display window process(es)", count)
+    return count
+
+
 def _open_edge(target: str) -> None:
     """Open the page in an Edge app window — no tabs, no address bar.
 
@@ -445,7 +497,11 @@ def _open_edge(target: str) -> None:
     global _pending_launch, _pending_size
     edge = _edge_path()
     if edge is None:
-        log.warning("Edge not found; open %s yourself", target)
+        log.warning("Edge not found; opening %s in the default browser", target)
+        try:
+            webbrowser.open(target)
+        except webbrowser.Error as exc:
+            log.warning("no browser either (%s); open %s yourself", exc, target)
         return
 
     close_stale_windows()
@@ -476,7 +532,9 @@ def _open_edge(target: str) -> None:
         # Detach: the window must outlive a single tool call, and must not hold
         # the stdio pipes the MCP protocol runs on.
         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+        start_new_session=sys.platform != "win32",
     )
+
     log.info("opened Edge at %s (%dx%d)", target, width, height)
 
 

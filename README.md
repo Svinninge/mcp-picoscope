@@ -30,7 +30,7 @@ survive) and a path to the file.
 |---|---|
 | Python 3.11+ | 64-bit, and it must match the driver's bitness |
 | PicoScope PS2104 | 1 channel, 8 bits, legacy `ps2000` driver (**not** `ps2000a`) |
-| `ps2000.dll` 64-bit | Ships with the PicoScope application (`winget install PicoTechnology.Picoscope.T&M`) or with PicoSDK |
+| `ps2000.dll` 64-bit | Ships with the PicoScope application (`winget install PicoTechnology.Picoscope.T&M`) or with PicoSDK. On macOS the driver is `libps2000.dylib` from PicoSDK (unverified on Apple Silicon, see issue #7) |
 | `picosdk` | Pico's official Python wrappers, `pip install picosdk` |
 
 The last two are only needed for real hardware. **A mock backend makes the whole
@@ -57,6 +57,12 @@ to your checkout, or register the server at user scope:
 claude mcp add --scope user picoscope -- <checkout>\.venv\Scripts\python.exe -m picoscope_mcp.server
 ```
 
+On macOS use `.venv/bin/python` (see [.mcp.json.macos.example](.mcp.json.macos.example)):
+
+```sh
+claude mcp add --scope user picoscope -- <checkout>/.venv/bin/python -m picoscope_mcp.server
+```
+
 ### Hardware (step 0)
 
 1. Install the driver. Easiest via winget:
@@ -70,7 +76,10 @@ claude mcp add --scope user picoscope -- <checkout>\.venv\Scripts\python.exe -m 
 5. `open_device(backend="ps2000")` should now report model and serial.
 
 The server finds the DLL itself (`_ensure_dll_on_path`). If it lives somewhere
-unusual, point `PICOSDK_DIR` at the directory holding it.
+unusual, point `PICOSDK_DIR` at the directory holding it. On macOS it looks for
+`libps2000.dylib` under `/Library/Frameworks/PicoSDK.framework/Libraries/libps2000`
+and inside the PicoScope 7 app bundle, and puts the directory on
+`DYLD_LIBRARY_PATH` instead of `PATH`.
 
 Close the PicoScope application before using the server — the device can only be
 opened by one process at a time.
@@ -183,7 +192,10 @@ quantised and the questions ask for rounded ones.
 ## The display
 
 The first time a tool is called, the server starts a local page on
-`http://127.0.0.1:8071/` and opens it in an **Edge app window**. It draws the
+`http://127.0.0.1:8071/` and opens it in an **Edge app window** (on macOS Edge,
+else Chrome; `PICOSCOPE_UI_BROWSER_PATH` names another Chromium binary; with none
+of them it opens as a tab in the default browser). It draws the
+
 trace the way an oscilloscope does — graticule, V/div, ms/div — plus the
 measurements, the channel and trigger settings, and a log of which MCP tools
 have run. It refreshes every 400 ms.
