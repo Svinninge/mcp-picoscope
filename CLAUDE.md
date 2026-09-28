@@ -118,7 +118,6 @@ browser (`tests/test_ui.py`). `PICOSCOPE_UI_BROWSER=0` serves the page without
 opening anything.
 
 **The window opens in its own Edge profile** (`picoscope-edge-profile` in the temp dir, `%TEMP%` on Windows).
-
 That costs a cold profile start and buys the only thing that matters: every
 process using that directory is ours, so a leftover window can be closed
 deterministically without touching the user's own browsing.
@@ -127,7 +126,6 @@ window watching, so anything still standing is a corpse) and in `stop()` when th
 server exits — but only when the claim is ours, or it would be another session's
 live window. On Windows the sweep goes through PowerShell/CIM; on macOS and Linux
 through `psutil` (a dependency only there).
-
 
 **The page cannot close itself.** Chromium refuses `window.close()` for a window
 the script did not open, and an `--app` window is one of those — measured, not

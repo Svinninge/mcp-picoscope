@@ -195,7 +195,6 @@ The first time a tool is called, the server starts a local page on
 `http://127.0.0.1:8071/` and opens it in an **Edge app window** (on macOS Edge,
 else Chrome; `PICOSCOPE_UI_BROWSER_PATH` names another Chromium binary; with none
 of them it opens as a tab in the default browser). It draws the
-
 trace the way an oscilloscope does — graticule, V/div, ms/div — plus the
 measurements, the channel and trigger settings, and a log of which MCP tools
 have run. It refreshes every 400 ms.
