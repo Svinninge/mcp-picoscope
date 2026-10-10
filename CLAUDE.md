@@ -277,7 +277,7 @@ mirrors them; the mirror block is generated, so open, edit and close tasks on Gi
 with:
 
 ```
-python "C:\Users\perno\OneDrive\Dokument\Claude\scripts\sync-todo-issues.py" mcp-picoscope
+python "C:\Users\perno\norrfors-core\scripts\sync-todo-issues.py" mcp-picoscope
 ```
 
 ## Hardware
