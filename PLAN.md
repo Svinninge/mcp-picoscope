@@ -52,7 +52,9 @@ asked about.
 - **`ps2000.dll` (64-bit)** is required. *Installed 2026-09-12* — but not through
   PicoSDK: `winget install PicoTechnology.Picoscope.T&M` installs the PicoScope 7
   application, which carries the same driver DLLs in its program directory. That
-  is enough.
+  is enough. *(That is the Windows machine. On macOS the driver is
+  `libps2000.dylib` from PicoSDK or PicoScope 7; whether an arm64 build for the
+  PS2104 exists is open in issue #7.)*
 - The `picosdk` Python wrapper (Pico's official `picosdk-python-wrappers`), which
   binds to the DLL through ctypes.
 - Python 3.13, 64-bit.
@@ -142,7 +144,7 @@ as a readable resource.
 ## 5. Implementation — step by step
 
 **Step 0 — Groundwork (hardware)** ✅ 2026-09-12
-- Install the 64-bit driver. Verify that `ps2000.dll` exists.
+- Install the 64-bit driver. Verify that `ps2000.dll` exists (`libps2000.dylib` on macOS).
 - Plug in the PS2104, run Pico's own application and confirm it sees the device.
 - Run a minimal Python script that opens the device and prints
   `ps2000_get_unit_info()`. **This is the gatekeeper** — if this does not work,

@@ -1,11 +1,12 @@
-# File version: v0.01
+# File version: v0.02
 """Measure whatever is on channel A properly: autoset, then several timebases.
 
 The definition-of-done check wants frequency to +/-1 % against a known source,
 so this reports the same signal measured over different window lengths. A real
 signal gives the same answer every time; a wrong one wanders.
 
-Run:  .\\.venv\\Scripts\\python.exe tools\\measure_signal.py
+Run:  .venv/bin/python tools/measure_signal.py            (macOS)
+      .\\.venv\\Scripts\\python.exe tools\\measure_signal.py  (Windows)
 """
 
 from __future__ import annotations

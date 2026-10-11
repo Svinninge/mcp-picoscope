@@ -1,7 +1,8 @@
-# File version: v0.01
+# File version: v0.02
 """Verify the volt scale against a known DC source (e.g. a 1.5 V AA cell).
 
-Run:  .\\.venv\\Scripts\\python.exe scratch\\verify_volt_scale.py
+Run:  .venv/bin/python tools/verify_volt_scale.py            (macOS)
+      .\\.venv\\Scripts\\python.exe tools\\verify_volt_scale.py  (Windows)
 
 Measures the same DC level on several ranges. Two different questions:
 

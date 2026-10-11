@@ -81,6 +81,15 @@ in `get_server_info()` and in the display header.
 .\.venv\Scripts\python.exe -m picoscope_mcp.server     # the server by hand (waits on stdio)
 ```
 
+```sh
+.venv/bin/python -m pytest tests -q          # macOS: the same three
+.venv/bin/python tests/test_stdio.py
+.venv/bin/python -m picoscope_mcp.server
+```
+
+`pytest` is not a declared dependency — install it into the venv. On macOS copy
+`.mcp.json.macos.example` instead.
+
 Register the server with Claude Code by copying `.mcp.json.example` to
 `.mcp.json` and adjusting the paths.
 
@@ -277,7 +286,8 @@ mirrors them; the mirror block is generated, so open, edit and close tasks on Gi
 with:
 
 ```
-python "C:\Users\perno\norrfors-core\scripts\sync-todo-issues.py" mcp-picoscope
+python "$env:USERPROFILE\norrfors-core\scripts\sync-todo-issues.py" mcp-picoscope   # Windows
+python3 ~/dev/norrfors-core/scripts/sync-todo-issues.py mcp-picoscope                 # macOS
 ```
 
 ## Hardware
@@ -288,3 +298,7 @@ sample buffer, 100 mV–20 V. The driver came with **PicoScope 7 T&M** via winge
 (`PicoTechnology.Picoscope.T&M`), so PicoSDK as a separate package is not
 required — the application carries the same `ps2000.dll`. 64-bit, to match the
 Python.
+
+On the MacBook Air M2 (macOS 26, Python 3.13 arm64) the test suite runs against the mock; the real
+driver there is unverified — whether PicoSDK has an arm64 `libps2000` for the PS2104 is open in
+issue #7.

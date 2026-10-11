@@ -1,4 +1,4 @@
-# File version: v0.02
+# File version: v0.03
 """Smoke test over the real stdio transport.
 
 Tools existing in a registry is not the same as tools being callable: argument
@@ -6,7 +6,8 @@ schemas, return serialisation and the resource URI only get exercised when a
 client actually speaks the protocol to a spawned server process.
 
 Run directly (no hardware needed, it drives the mock backend):
-    .\\.venv\\Scripts\\python.exe tests\\test_stdio.py
+    .venv/bin/python tests/test_stdio.py            (macOS)
+    .\\.venv\\Scripts\\python.exe tests\\test_stdio.py  (Windows)
 """
 
 from __future__ import annotations

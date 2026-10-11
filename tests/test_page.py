@@ -1,4 +1,5 @@
-# File version: v0.01
+# File version: v0.02
+# Modified: 2026-10-11 - node fallback for macOS (Homebrew) beside the Windows one (Claude)
 """The display page must at least parse.
 
 A stray quote in ui.html killed the whole script at parse time, and nothing in
@@ -17,7 +18,24 @@ from pathlib import Path
 import pytest
 
 PAGE = Path(__file__).resolve().parents[1] / "picoscope_mcp" / "ui.html"
-NODE = shutil.which("node") or r"C:\Program Files\nodejs\node.exe"
+# Where node lands when its directory is not on PATH (an MCP or IDE process
+# does not always inherit the login shell's PATH): the Windows installer and
+# Homebrew on Apple Silicon / Intel.
+NODE_FALLBACKS = (
+    r"C:\Program Files\nodejs\node.exe",
+    "/opt/homebrew/bin/node",
+    "/usr/local/bin/node",
+)
+
+
+def find_node() -> str | None:
+    found = shutil.which("node")
+    if found:
+        return found
+    return next((p for p in NODE_FALLBACKS if Path(p).exists()), None)
+
+
+NODE = find_node()
 
 
 def page_script() -> str:
@@ -27,7 +45,7 @@ def page_script() -> str:
     return "\n".join(blocks)
 
 
-@pytest.mark.skipif(not Path(NODE).exists(), reason="node not installed")
+@pytest.mark.skipif(NODE is None, reason="node not installed")
 def test_page_script_parses(tmp_path):
     js = tmp_path / "page.js"
     js.write_text(page_script(), encoding="utf-8")

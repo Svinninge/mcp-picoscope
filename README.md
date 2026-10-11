@@ -38,12 +38,28 @@ server runnable and testable without a scope.**
 
 ## Installation
 
+Windows (PowerShell):
+
 ```powershell
 git clone https://github.com/Svinninge/mcp-picoscope.git
 cd mcp-picoscope
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
+
+macOS (zsh):
+
+```sh
+git clone https://github.com/Svinninge/mcp-picoscope.git
+cd mcp-picoscope
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+**Command convention.** The blocks further down are written for Windows. On
+macOS the same commands run as `.venv/bin/python` with forward slashes:
+`.\.venv\Scripts\python.exe tools\step0_verify.py` becomes
+`.venv/bin/python tools/step0_verify.py`.
 
 Use a dedicated virtualenv rather than the global Python: `mcp` 2.x pulls in a
 newer starlette than some other tooling tolerates.
@@ -65,13 +81,20 @@ claude mcp add --scope user picoscope -- <checkout>/.venv/bin/python -m picoscop
 
 ### Hardware (step 0)
 
-1. Install the driver. Easiest via winget:
-   `winget install PicoTechnology.Picoscope.T&M` — the application carries
-   `ps2000.dll`. The 64-bit PicoSDK from Pico Technology works just as well.
-2. Plug in the PS2104. Without a driver it shows as `Status: Error` in Device
-   Manager; with one, as `PicoScope 2000 series PC Oscilloscope`.
-3. `pip install picosdk`.
-4. `.\.venv\Scripts\python.exe tools\step0_verify.py` prints the variant, the
+1. Install the driver.
+   - Windows: easiest via winget, `winget install PicoTechnology.Picoscope.T&M`
+     — the application carries `ps2000.dll`. The 64-bit PicoSDK from Pico
+     Technology works just as well.
+   - macOS: PicoSDK (or PicoScope 7) from Pico Technology, which provides
+     `libps2000.dylib`. **Not yet verified on Apple Silicon** — whether an
+     arm64 `libps2000` for the PS2104 exists is open in issue #7.
+2. Plug in the PS2104. On Windows, without a driver it shows as
+   `Status: Error` in Device Manager; with one, as
+   `PicoScope 2000 series PC Oscilloscope`. On macOS it talks over libusb, so
+   there is no driver status to read — `step0_verify.py` is the check.
+3. `pip install picosdk` (in the venv).
+4. `.\.venv\Scripts\python.exe tools\step0_verify.py` (macOS:
+   `.venv/bin/python tools/step0_verify.py`) prints the variant, the
    serial, the voltage ranges the device accepts and the whole timebase table.
 5. `open_device(backend="ps2000")` should now report model and serial.
 
@@ -107,7 +130,11 @@ bundled. Or build it yourself:
 .\.venv\Scripts\python.exe packaging\build_exe.py     # → dist\PicoScope.exe, about 50 MB
 ```
 
-**A desktop shortcut.** Point it at `dist\PicoScope.exe` rather than copying the
+On macOS there is no packaged app yet (`build_exe.py` builds only the Windows
+exe; a `.app` is a P2 item in issue #7). Run it from the venv instead:
+`.venv/bin/picoscope-app` or `.venv/bin/python -m picoscope_mcp.app`.
+
+**A desktop shortcut (Windows).** Point it at `dist\PicoScope.exe` rather than copying the
 exe: a rebuild replaces the file in place, so the shortcut always starts the
 latest build. Set the working directory to the repository root, since exports
 and screenshots go to `captures\` relative to it. From the repository root:
@@ -307,6 +334,16 @@ without a Claude session running, hold a session open yourself:
 .\.venv\Scripts\python.exe tests\test_stdio.py       # smoke test against the mock, with output
 .\.venv\Scripts\python.exe tests\test_hardware.py    # smoke test against a real scope
 ```
+
+```sh
+.venv/bin/python -m pytest tests -q                  # macOS: the same three
+.venv/bin/python tests/test_stdio.py
+.venv/bin/python tests/test_hardware.py
+```
+
+`pytest` is not a declared dependency; install it into the venv
+(`pip install pytest`, or `uv pip install --python .venv/bin/python pytest`
+for a venv made by uv, which has no pip).
 
 The mock carries the ground truth: the analysis functions are tested against
 signals of known frequency, amplitude and duty cycle. The hardware test asks for

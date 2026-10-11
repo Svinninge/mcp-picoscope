@@ -1,4 +1,4 @@
-# File version: v0.01
+# File version: v0.02
 """Verify the edge trigger against a real signal.
 
 A trigger is not verified by a capture succeeding — a free-running capture
@@ -13,7 +13,8 @@ wrong: a threshold the signal never reaches must time out with a readable
 message when auto_trigger_ms is 0, and must fall back to an untriggered capture
 when it is not.
 
-Run:  .\\.venv\\Scripts\\python.exe tools\\verify_trigger.py
+Run:  .venv/bin/python tools/verify_trigger.py            (macOS)
+      .\\.venv\\Scripts\\python.exe tools\\verify_trigger.py  (Windows)
 """
 
 from __future__ import annotations

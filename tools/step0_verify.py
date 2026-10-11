@@ -1,7 +1,8 @@
-# File version: v0.01
+# File version: v0.02
 """PLAN.md step 0 — the gatekeeper. Talk to the real PS2104 or stop.
 
-Run:  .\.venv\Scripts\python.exe tools\step0_verify.py
+Run:  .venv/bin/python tools/step0_verify.py            (macOS)
+      .\\.venv\\Scripts\\python.exe tools\\step0_verify.py  (Windows)
 
 Checks, in the order where each one makes the next meaningful:
   1. picosdk wrapper imports and ps2000.dll loads (bitness, SDK present)

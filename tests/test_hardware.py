@@ -1,4 +1,4 @@
-# File version: v0.02
+# File version: v0.03
 """Hardware smoke test over stdio. Requires a real PicoScope.
 
 Skipped automatically when no device answers, so the suite still runs on a
@@ -6,7 +6,8 @@ machine without hardware. This is the test that would have caught the driver
 path problem: it refuses the mock fallback and fails if 'ps2000' is not the
 backend that opened.
 
-Run:  .\\.venv\\Scripts\\python.exe tests\\test_hardware.py
+Run:  .venv/bin/python tests/test_hardware.py            (macOS)
+      .\\.venv\\Scripts\\python.exe tests\\test_hardware.py  (Windows)
 """
 
 from __future__ import annotations

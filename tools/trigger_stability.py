@@ -1,4 +1,4 @@
-# File version: v0.01
+# File version: v0.02
 """Measure how much the trigger steadies the trace, through the display.
 
 Reads the running display's state over HTTP and collects the start of each new
@@ -8,7 +8,8 @@ click actually takes: page to server to instrument and back.
 A triggered trace starts in the same place every sweep; an untriggered one
 starts wherever the signal happened to be. That difference is the measurement.
 
-Run:  .\\.venv\\Scripts\\python.exe tools\\trigger_stability.py [url] [seconds]
+Run:  .venv/bin/python tools/trigger_stability.py [url] [seconds]            (macOS)
+      .\\.venv\\Scripts\\python.exe tools\\trigger_stability.py [url] [seconds]  (Windows)
 """
 
 from __future__ import annotations
