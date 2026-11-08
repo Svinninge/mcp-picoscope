@@ -30,7 +30,7 @@ survive) and a path to the file.
 |---|---|
 | Python 3.11+ | 64-bit, and it must match the driver's bitness |
 | PicoScope PS2104 | 1 channel, 8 bits, legacy `ps2000` driver (**not** `ps2000a`) |
-| `ps2000.dll` 64-bit | Ships with the PicoScope application (`winget install PicoTechnology.Picoscope.T&M`) or with PicoSDK. On macOS the driver is `libps2000.dylib` from PicoSDK (unverified on Apple Silicon, see issue #7) |
+| `ps2000.dll` 64-bit | Ships with the PicoScope application (`winget install PicoTechnology.Picoscope.T&M`) or with PicoSDK. On macOS the driver is `libps2000.dylib` from the PicoScope 7 app; it is **x86_64 only**, so on Apple Silicon the venv must use an x86_64 Python under Rosetta (see below) |
 | `picosdk` | Pico's official Python wrappers, `pip install picosdk` |
 
 The last two are only needed for real hardware. **A mock backend makes the whole
@@ -55,6 +55,19 @@ cd mcp-picoscope
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
 ```
+
+On Apple Silicon with real hardware, build the venv from an **x86_64** Python
+instead: Pico ships `libps2000.dylib` for x86_64 only (PicoScope 7.2.30, checked
+2026-11-08), and an arm64 process cannot load it. With `uv` that is:
+
+```sh
+uv python install cpython-3.13-macos-x86_64-none
+uv venv --python "$(uv python find cpython-3.13-macos-x86_64-none)" .venv
+uv pip install --python .venv/bin/python --only-binary cryptography,numpy,matplotlib,pydantic-core -e ".[hardware]" pytest
+```
+
+`--only-binary` matters: the newest `cryptography` has no x86_64 macOS wheel
+and fails to build from source; the resolver then picks one that has.
 
 **Command convention.** The blocks further down are written for Windows. On
 macOS the same commands run as `.venv/bin/python` with forward slashes:
@@ -85,9 +98,12 @@ claude mcp add --scope user picoscope -- <checkout>/.venv/bin/python -m picoscop
    - Windows: easiest via winget, `winget install PicoTechnology.Picoscope.T&M`
      — the application carries `ps2000.dll`. The 64-bit PicoSDK from Pico
      Technology works just as well.
-   - macOS: PicoSDK (or PicoScope 7) from Pico Technology, which provides
-     `libps2000.dylib`. **Not yet verified on Apple Silicon** — whether an
-     arm64 `libps2000` for the PS2104 exists is open in issue #7.
+   - macOS: PicoScope 7 (`brew install --cask picoscope`, or copy
+     `PicoScope 7 T&M.app` out of the expanded `.pkg` into `/Applications` —
+     the package has no install scripts). The driver is
+     `Contents/MonoBundle/libps2000.dylib`, x86_64 only, and needs nothing
+     beyond system frameworks — no kernel extension or extra USB permission.
+     Verified against the PS2104 on an M2 under Rosetta, 2026-11-08.
 2. Plug in the PS2104. On Windows, without a driver it shows as
    `Status: Error` in Device Manager; with one, as
    `PicoScope 2000 series PC Oscilloscope`. On macOS it talks over libusb, so

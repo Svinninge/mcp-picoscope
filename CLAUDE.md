@@ -299,6 +299,8 @@ sample buffer, 100 mV–20 V. The driver came with **PicoScope 7 T&M** via winge
 required — the application carries the same `ps2000.dll`. 64-bit, to match the
 Python.
 
-On the MacBook Air M2 (macOS 26, Python 3.13 arm64) the test suite runs against the mock; the real
-driver there is unverified — whether PicoSDK has an arm64 `libps2000` for the PS2104 is open in
-issue #7.
+On the MacBook Air M2 (macOS 26) the real PS2104 works, verified 2026-11-08 (serial JAL78/008,
+driver "PS2000 MacOSX Driver, 3.0.152.6217"). **Pico ships `libps2000.dylib` for x86_64 only**, so
+the venv is an x86_64 Python 3.13 (uv) running under Rosetta; an arm64 venv gets "PicoSDK (ps2000)
+not found". The driver comes from `/Applications/PicoScope 7 T&M.app/Contents/MonoBundle`, already
+a `DLL_CANDIDATES` entry. Install commands in README.md.

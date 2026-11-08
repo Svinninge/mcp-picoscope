@@ -1,4 +1,4 @@
-# File version: v0.02
+# File version: v0.03
 """PLAN.md step 0 — the gatekeeper. Talk to the real PS2104 or stop.
 
 Run:  .venv/bin/python tools/step0_verify.py            (macOS)
@@ -20,6 +20,7 @@ from __future__ import annotations
 import ctypes
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 
@@ -52,6 +53,12 @@ def info(lib, handle: int, line: int) -> str:
 
 def main() -> int:
     print("[1] importing picosdk / loading ps2000.dll")
+    # The same directory search the server does; without it find_library
+    # misses the driver on every OS (PATH on Windows, DYLD_LIBRARY_PATH on macOS).
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from picoscope_mcp.backends.ps2000 import _ensure_dll_on_path
+
+    _ensure_dll_on_path()
     try:
         from picosdk.ps2000 import ps2000 as lib
     except ImportError as exc:
